@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
     provider = "prisma-client-js"
 }
@@ -8,8 +5,8 @@ generator client {
 datasource db {
     provider = "postgresql"
     url      = env("DATABASE_URL")
-
 }
+
 model Post {
     id        Int      @id @default(autoincrement())
     name      String
@@ -19,16 +16,73 @@ model Post {
     @@index([name])
 }
 
-
 model Students {
- id        Int      @id @default(autoincrement())
- firstname String
- middleName  String?
- lastName   String
- image     String
- username String?
- Password String?
+    id         Int      @id @default(autoincrement())
+    firstname  String
+    middleName String?
+    lastName   String
+    image      String
+    username   String?
+    password   String?
+
+    attendanceRecords AttendanceRecord[]
 }
 
+model Teacher {
+    id         Int       @id @default(autoincrement())
+    firstname  String
+    middleName String?
+    lastName   String
+    image      String
+    username   String?
+    password   String?
 
+    subjects   Subject[]
+}
 
+model Subject {
+    id        Int      @id @default(autoincrement())
+    name      String
+    startTime DateTime?  
+    endTime   DateTime?  
+    duration  Int?
+    teacherId Int
+    order  Int?  @unique
+    teacher   Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+    attendanceRecords AttendanceRecord[]
+}
+
+model Attendance {
+    id        Int      @id @default(autoincrement())
+    date      DateTime @unique // Ensures each date is recorded only once
+    records   AttendanceRecord[]
+}
+
+model AttendanceRecord {
+    id             Int              @id @default(autoincrement())
+    attendanceId   Int
+    studentId      Int
+    subjectId      Int
+    status         AttendanceStatus @default(PRESENT)
+    timeStart      DateTime?        // Changed from Int to DateTime for better time handling
+    timeEnd        DateTime?        // Changed from Int to DateTime
+    detectOut      Boolean          @default(false)
+    detectIn       Boolean          @default(false)
+    active         Boolean          @default(false)
+    remainingBreak Int              @default(600) // 10 minutes in seconds (600)
+    totalTime      Int              @default(0)   // Total time in seconds (excluding breaks)
+    lastExitTime   DateTime?        // Track when student last exited
+
+    attendance     Attendance       @relation(fields: [attendanceId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+    student        Students         @relation(fields: [studentId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+    subject        Subject          @relation(fields: [subjectId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+    @@unique([attendanceId, studentId, subjectId])
+}
+
+enum AttendanceStatus {
+    PRESENT
+    ABSENT
+    LATE
+    EXCUSED
+}

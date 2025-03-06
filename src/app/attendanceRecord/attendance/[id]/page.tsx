@@ -43,6 +43,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Loader,
+  Eye,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -52,7 +54,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import Loader from "../(components)/Loader";
+import { useRouter, usePathname } from "next/navigation";
 
 const SubjectsPage = () => {
   const { toast } = useToast();
@@ -61,6 +63,7 @@ const SubjectsPage = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingSubject, setEditingSubject] = useState<any>(null);
   const [selectedTeacher, setSelectedTeacher] = useState<number | null>(null);
+  const router = useRouter();
   const pageSize = 10;
 
   // Fetch subjects with search, pagination, and teacher filter
@@ -73,6 +76,7 @@ const SubjectsPage = () => {
 
   // Fetch all teachers for the dropdown
   const { data: teachers } = api.subjects.getAllTeachers.useQuery();
+  const pathname = usePathname(); // Get the current path
 
   const upsertSubject = api.subjects.createOrUpdateSubject.useMutation({
     onSuccess: async () => {
@@ -342,6 +346,19 @@ const SubjectsPage = () => {
                                   >
                                     <span className="sr-only">Edit</span>
                                     <Pencil className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() =>
+                                      router.push(`${pathname}/${subject.id}`)
+                                    }
+                                    className="h-8 w-8 p-0"
+                                  >
+                                    <span className="sr-only">
+                                      Show Attendance
+                                    </span>
+                                    <Eye className="h-4 w-4" />
                                   </Button>
                                   <AlertDialog>
                                     <AlertDialogTrigger asChild>

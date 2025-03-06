@@ -48,6 +48,12 @@ const Sidebar = () => {
       label: "Subjects",
       icon: <NotebookText className="h-4 w-4" />,
     },
+
+    {
+      href: "/attendanceRecord/attendance",
+      label: "Attendance",
+      icon: <NotebookText className="h-4 w-4" />,
+    },
   ];
 
   return (
