@@ -59,30 +59,28 @@ model Attendance {
 }
 
 model AttendanceRecord {
-    id             Int              @id @default(autoincrement())
-    attendanceId   Int
-    studentId      Int
-    subjectId      Int
-    status         AttendanceStatus @default(PRESENT)
-    timeStart      DateTime?        // Changed from Int to DateTime for better time handling
-    timeEnd        DateTime?        // Changed from Int to DateTime
-    detectOut      Boolean          @default(false)
-    detectIn       Boolean          @default(false)
-    active         Boolean          @default(false)
-    remainingBreak Int              @default(600) // 10 minutes in seconds (600)
-    totalTime      Int              @default(0)   // Total time in seconds (excluding breaks)
-    lastExitTime   DateTime?        // Track when student last exited
+    id           Int       @id @default(autoincrement())
+    attendanceId Int
+    studentId    Int
+    subjectId    Int
+    status       AttendanceStatus @default(PRESENT)
+    timeStart    DateTime?
+    timeEnd      DateTime?
+    breakTime    Int? @default(600) 
+    paused       Boolean?          @default(false)
+    
 
-    attendance     Attendance       @relation(fields: [attendanceId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-    student        Students         @relation(fields: [studentId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-    subject        Subject          @relation(fields: [subjectId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+    attendance   Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+    student      Students   @relation(fields: [studentId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+    subject      Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+    
 
-    @@unique([attendanceId, studentId, subjectId])
+    @@unique([attendanceId, studentId, subjectId]) 
 }
 
 enum AttendanceStatus {
     PRESENT
     ABSENT
     LATE
-    EXCUSED
+    
 }

@@ -58,7 +58,11 @@ export const attendanceRecord = createTRPCRouter({
             studentId: z.number(),
             attendanceId: z.number(),
             subjectId: z.number(),
-            status: z.enum(["PRESENT", "ABSENT", "LATE", "EXCUSED"]),
+            status: z.enum(["PRESENT", "ABSENT", "LATE"]),
+            timeStart: z.date().nullable().optional(),
+            timeEnd: z.date().nullable().optional(),
+            breakTime: z.number().nullable().optional(),
+            paused: z.boolean().optional(),
           }),
         ),
       }),
@@ -67,13 +71,32 @@ export const attendanceRecord = createTRPCRouter({
       // Process each record - create new ones or update existing ones
       const results = await Promise.all(
         input.records.map(async (record) => {
+          const data: any = {
+            status: record.status,
+          };
+
+          // Only include fields if they are provided
+          if (record.timeStart !== undefined) {
+            data.timeStart = record.timeStart;
+          }
+
+          if (record.timeEnd !== undefined) {
+            data.timeEnd = record.timeEnd;
+          }
+
+          if (record.breakTime !== undefined) {
+            data.breakTime = record.breakTime;
+          }
+
+          if (record.paused !== undefined) {
+            data.paused = record.paused;
+          }
+
           if (record.id) {
             // Update existing record
             return ctx.db.attendanceRecord.update({
               where: { id: record.id },
-              data: {
-                status: record.status,
-              },
+              data,
             });
           } else {
             // Create new record
@@ -83,7 +106,18 @@ export const attendanceRecord = createTRPCRouter({
                 attendanceId: record.attendanceId,
                 subjectId: record.subjectId,
                 status: record.status,
-                remainingBreak: 600, // 10 minutes in seconds
+                ...(record.timeStart !== undefined && {
+                  timeStart: record.timeStart,
+                }),
+                ...(record.timeEnd !== undefined && {
+                  timeEnd: record.timeEnd,
+                }),
+                ...(record.breakTime !== undefined && {
+                  breakTime: record.breakTime,
+                }),
+                ...(record.paused !== undefined && {
+                  paused: record.paused,
+                }),
               },
             });
           }
@@ -93,270 +127,273 @@ export const attendanceRecord = createTRPCRouter({
       return { count: results.length };
     }),
 
-  // New procedure to handle camera detection events
-  updateDetectionStatus: publicProcedure
+  startTimeTracking: publicProcedure
     .input(
       z.object({
         recordId: z.number(),
-        type: z.enum(["in", "out"]),
-        value: z.boolean(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      // Use a more specific update that only updates the timeStart field
+      return ctx.db.attendanceRecord.update({
+        where: { id: input.recordId },
+        data: {
+          timeStart: new Date(),
+          breakTime: 600, // Initialize break time to 10 minutes (600 seconds)
+          paused: false, // Ensure break is not active
+        },
+      });
+    }),
+
+  stopTimeTracking: publicProcedure
+    .input(
+      z.object({
+        recordId: z.number(),
+        subjectDuration: z.number().optional(), // Add subject duration parameter
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Get the current record to check the start time and break time
       const record = await ctx.db.attendanceRecord.findUnique({
         where: { id: input.recordId },
       });
 
-      if (!record) {
-        throw new Error("Attendance record not found");
+      if (!record || !record.timeStart) {
+        throw new Error("Record not found or time tracking not started");
       }
 
-      const now = new Date();
+      // If a break is active, stop it first
+      if (record.paused) {
+        // Calculate elapsed break time
+        const currentBreakTime = record.breakTime || 600;
 
-      if (input.type === "in") {
-        // Student entering the classroom
-        if (input.value && !record.detectIn) {
-          // Student is entering for the first time
-          if (!record.timeStart) {
-            return ctx.db.attendanceRecord.update({
-              where: { id: input.recordId },
-              data: {
-                detectIn: true,
-                detectOut: false,
-                active: true,
-                timeStart: now,
-              },
-            });
-          }
-          // Student is re-entering after a break
-          else {
-            // Calculate how much break time was used
-            let updatedRemainingBreak = record.remainingBreak;
-            const updatedTotalTime = record.totalTime || 0;
-
-            if (record.lastExitTime) {
-              const breakDuration = Math.floor(
-                (now.getTime() - record.lastExitTime.getTime()) / 1000,
-              );
-
-              // If student had remaining break time, use it
-              if (record.remainingBreak > 0) {
-                updatedRemainingBreak = Math.max(
-                  0,
-                  record.remainingBreak - breakDuration,
-                );
-              }
-              // If no break time left, don't count the time they were out
-              else {
-                // No need to update total time as the break time was exhausted
-              }
-            }
-
-            return ctx.db.attendanceRecord.update({
-              where: { id: input.recordId },
-              data: {
-                detectIn: true,
-                detectOut: false,
-                active: true,
-                remainingBreak: updatedRemainingBreak,
-                totalTime: updatedTotalTime,
-              },
-            });
-          }
-        }
-        // Student is already detected as in, no change needed
-        else if (!input.value && record.detectIn) {
-          return ctx.db.attendanceRecord.update({
-            where: { id: input.recordId },
-            data: {
-              detectIn: false,
-              active: false,
-            },
-          });
-        }
-      } else if (input.type === "out") {
-        // Student exiting the classroom
-        if (input.value && !record.detectOut) {
-          // Record the exit time
-          return ctx.db.attendanceRecord.update({
-            where: { id: input.recordId },
-            data: {
-              detectOut: true,
-              detectIn: false,
-              active: false,
-              lastExitTime: now,
-            },
-          });
-        }
-        // Student is no longer detected as out
-        else if (!input.value && record.detectOut) {
-          return ctx.db.attendanceRecord.update({
-            where: { id: input.recordId },
-            data: {
-              detectOut: false,
-            },
-          });
-        }
-      }
-
-      // If no conditions were met, just return the record
-      return record;
-    }),
-
-  // New procedure to handle camera detection from automated systems
-  cameraDetection: publicProcedure
-    .input(
-      z.object({
-        studentId: z.number(),
-        attendanceId: z.number(),
-        subjectId: z.number(),
-        cameraType: z.enum(["entrance", "exit"]),
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      // Find the attendance record or create if it doesn't exist
-      let record = await ctx.db.attendanceRecord.findFirst({
-        where: {
-          studentId: input.studentId,
-          attendanceId: input.attendanceId,
-          subjectId: input.subjectId,
-        },
-      });
-
-      const now = new Date();
-
-      if (!record) {
-        // Create a new record if none exists
-        record = await ctx.db.attendanceRecord.create({
+        // Update the record with the new break time
+        await ctx.db.attendanceRecord.update({
+          where: { id: input.recordId },
           data: {
-            studentId: input.studentId,
-            attendanceId: input.attendanceId,
-            subjectId: input.subjectId,
-            status: "PRESENT",
-            remainingBreak: 600, // 10 minutes in seconds
+            paused: false,
           },
         });
       }
 
-      // Handle entrance camera detection
-      if (input.cameraType === "entrance") {
-        // If student is entering for the first time
-        if (!record.timeStart) {
-          return ctx.db.attendanceRecord.update({
-            where: { id: record.id },
-            data: {
-              detectIn: true,
-              detectOut: false,
-              active: true,
-              timeStart: now,
-            },
-          });
-        }
-        // Student is re-entering after a break
-        else if (record.detectOut) {
-          // Calculate how much break time was used
-          let updatedRemainingBreak = record.remainingBreak;
-          const updatedTotalTime = record.totalTime || 0;
+      // Calculate the end time
+      let endTime = new Date();
 
-          if (record.lastExitTime) {
-            const breakDuration = Math.floor(
-              (now.getTime() - record.lastExitTime.getTime()) / 1000,
-            );
+      // If subject duration is provided, limit the end time based on the duration
+      if (input.subjectDuration && record.timeStart) {
+        const startTime = new Date(record.timeStart).getTime();
+        const maxEndTime = new Date(
+          startTime + input.subjectDuration * 60 * 1000,
+        );
 
-            // If student had remaining break time, use it
-            if (record.remainingBreak > 0) {
-              updatedRemainingBreak = Math.max(
-                0,
-                record.remainingBreak - breakDuration,
-              );
-            }
-          }
-
-          return ctx.db.attendanceRecord.update({
-            where: { id: record.id },
-            data: {
-              detectIn: true,
-              detectOut: false,
-              active: true,
-              remainingBreak: updatedRemainingBreak,
-              totalTime: updatedTotalTime,
-            },
-          });
-        }
-      }
-      // Handle exit camera detection
-      else if (input.cameraType === "exit") {
-        // Only process if the student was previously detected as in
-        if (record.detectIn) {
-          // Calculate time spent in class for this session
-          let updatedTotalTime = record.totalTime || 0;
-
-          if (record.timeStart) {
-            const sessionDuration = Math.floor(
-              (now.getTime() - record.timeStart.getTime()) / 1000,
-            );
-            updatedTotalTime += sessionDuration;
-          }
-
-          return ctx.db.attendanceRecord.update({
-            where: { id: record.id },
-            data: {
-              detectIn: false,
-              detectOut: true,
-              active: false,
-              lastExitTime: now,
-              totalTime: updatedTotalTime,
-            },
-          });
+        // If the current time exceeds the max end time, use the max end time
+        if (endTime > maxEndTime) {
+          endTime = maxEndTime;
         }
       }
 
-      // If no conditions were met, just return the record
-      return record;
+      // Update the record with the calculated end time
+      return ctx.db.attendanceRecord.update({
+        where: { id: input.recordId },
+        data: {
+          timeEnd: endTime,
+          paused: false, // Ensure break is not active
+        },
+      });
     }),
 
-  // Calculate total attendance time for reporting
-  calculateAttendanceTime: publicProcedure
+  startBreakTime: publicProcedure
+    .input(
+      z.object({
+        recordId: z.number(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Get the current record to check if it exists and has a start time
+      const record = await ctx.db.attendanceRecord.findUnique({
+        where: { id: input.recordId },
+      });
+
+      if (!record || !record.timeStart) {
+        throw new Error("Record not found or time tracking not started");
+      }
+
+      if (record.timeEnd) {
+        throw new Error(
+          "Cannot start break time after time tracking has ended",
+        );
+      }
+
+      if (record.paused) {
+        throw new Error("Break already started");
+      }
+
+      if ((record.breakTime || 0) <= 0) {
+        throw new Error("No break time remaining");
+      }
+
+      // Update the record to indicate break has started
+      return ctx.db.attendanceRecord.update({
+        where: { id: input.recordId },
+        data: {
+          paused: true, // Explicitly set paused to true in the database
+        },
+      });
+    }),
+
+  stopBreakTime: publicProcedure
+    .input(
+      z.object({
+        recordId: z.number(),
+        elapsedBreakTime: z.number(), // Elapsed break time in seconds
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Get the current record to check if it exists and has a start time
+      const record = await ctx.db.attendanceRecord.findUnique({
+        where: { id: input.recordId },
+      });
+
+      if (!record || !record.timeStart) {
+        throw new Error("Record not found or time tracking not started");
+      }
+
+      if (record.timeEnd) {
+        throw new Error("Cannot stop break time after time tracking has ended");
+      }
+
+      if (!record.paused) {
+        throw new Error("Break not started");
+      }
+
+      // Calculate the remaining break time
+      const currentBreakTime = record.breakTime || 600; // Default to 10 minutes if null
+      const newBreakTime = Math.max(
+        0,
+        currentBreakTime - input.elapsedBreakTime,
+      );
+
+      // Update the record with the new break time and clear the break start time
+      return ctx.db.attendanceRecord.update({
+        where: { id: input.recordId },
+        data: {
+          breakTime: newBreakTime,
+          paused: false, // Clear the break active flag
+        },
+      });
+    }),
+
+  updateBreakTime: publicProcedure
+    .input(
+      z.object({
+        recordId: z.number(),
+        breakTime: z.number(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return ctx.db.attendanceRecord.update({
+        where: { id: input.recordId },
+        data: {
+          breakTime: input.breakTime,
+        },
+      });
+    }),
+
+  autoAdjustStatus: publicProcedure
     .input(
       z.object({
         attendanceId: z.number(),
         subjectId: z.number(),
+        subjectStartTime: z.date(),
+        minPercentage: z.number().default(75), // Default to 75% attendance required
       }),
     )
-    .query(async ({ ctx, input }) => {
+    .mutation(async ({ ctx, input }) => {
+      // Get all attendance records for this attendance and subject
       const records = await ctx.db.attendanceRecord.findMany({
         where: {
           attendanceId: input.attendanceId,
           subjectId: input.subjectId,
-        },
-        include: {
-          student: true,
+          timeStart: { not: null }, // Only consider records with time tracking data
         },
       });
 
-      const now = new Date();
+      if (records.length === 0) {
+        return { count: 0 };
+      }
 
-      // Calculate current total time for each student
-      return records.map((record) => {
-        let totalTime = record.totalTime || 0;
+      // Get the subject to calculate duration
+      const subject = await ctx.db.subject.findUnique({
+        where: { id: input.subjectId },
+      });
 
-        // If student is currently active, add the current session time
-        if (record.active && record.timeStart) {
-          const currentSessionTime = Math.floor(
-            (now.getTime() - record.timeStart.getTime()) / 1000,
-          );
-          totalTime += currentSessionTime;
+      if (!subject) {
+        throw new Error("Subject not found");
+      }
+
+      // Calculate subject duration in minutes
+      let subjectDuration = 0;
+      if (subject.startTime && subject.endTime) {
+        const startTime = new Date(subject.startTime).getTime();
+        const endTime = new Date(subject.endTime).getTime();
+        subjectDuration = Math.floor((endTime - startTime) / (1000 * 60));
+      } else if (subject.duration) {
+        subjectDuration = subject.duration;
+      } else {
+        throw new Error("Subject duration not available");
+      }
+
+      // Process each record to determine the appropriate status
+      const updatePromises = records.map(async (record) => {
+        if (!record.timeStart) return null; // Skip records without time tracking
+
+        // Calculate end time (use current time if not ended yet)
+        const endTime = record.timeEnd || new Date();
+
+        // Calculate duration in minutes
+        const startTime = new Date(record.timeStart).getTime();
+        const endTimeMs = new Date(endTime).getTime();
+        const durationMinutes = Math.floor(
+          (endTimeMs - startTime) / (1000 * 60),
+        );
+
+        // Calculate percentage of attendance
+        const percentage = (durationMinutes / subjectDuration) * 100;
+
+        // Determine if student was late
+        const studentStartTime = new Date(record.timeStart);
+        const subjectStart = new Date(input.subjectStartTime);
+        const isLate = studentStartTime > subjectStart;
+
+        // Determine status based on criteria
+        let newStatus: "PRESENT" | "ABSENT" | "LATE";
+
+        if (percentage < input.minPercentage) {
+          // Less than minimum percentage = ABSENT
+          newStatus = "ABSENT";
+        } else if (isLate) {
+          // More than minimum percentage but late = LATE
+          newStatus = "LATE";
+        } else {
+          // More than minimum percentage and on time = PRESENT
+          newStatus = "PRESENT";
         }
 
-        return {
-          studentId: record.studentId,
-          studentName: `${record.student.firstname} ${record.student.lastName}`,
-          totalTimeSeconds: totalTime,
-          totalTimeFormatted: formatDuration(totalTime),
-          status: record.status,
-          remainingBreak: record.remainingBreak,
-        };
+        // Only update if status has changed
+        if (record.status !== newStatus) {
+          return ctx.db.attendanceRecord.update({
+            where: { id: record.id },
+            data: { status: newStatus },
+          });
+        }
+
+        return null;
       });
+
+      // Execute all updates and filter out null results
+      const results = (await Promise.all(updatePromises)).filter(Boolean);
+
+      return { count: results.length };
     }),
 
   createAttendance: publicProcedure
@@ -383,16 +420,5 @@ export const attendanceRecord = createTRPCRouter({
       });
     }),
 });
-
-// Helper function to format duration
-function formatDuration(seconds: number) {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-
-  return `${hours.toString().padStart(2, "0")}:${minutes
-    .toString()
-    .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-}
 
 export default attendanceRecord;

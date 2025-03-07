@@ -5,6 +5,8 @@ import { TeachersRouter } from "./routers/teachers";
 import { SubjectsRouter } from "./routers/subjects";
 import { AttendanceRouter } from "./routers/attendance";
 import attendanceRecord from "./routers/attendanceRecord";
+import { AttendanceOverview } from "./routers/attendanceOverview";
+import { DashboardRouter } from "./routers/dashboard";
 
 /**
  * This is the primary router for your server.
@@ -18,6 +20,8 @@ export const appRouter = createTRPCRouter({
   subjects: SubjectsRouter,
   attendances: AttendanceRouter,
   attendanceRecord: attendanceRecord,
+  attendanceOverview: AttendanceOverview,
+  dashboard: DashboardRouter,
 });
 
 // export type definition of API
