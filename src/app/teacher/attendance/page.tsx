@@ -61,9 +61,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import Loader from "../(components)/Loader";
 import { useReactToPrint } from "react-to-print";
 import * as XLSX from "xlsx";
+import Loader from "@/app/attendanceRecord/(components)/Loader";
 
 type AttendanceStatus = "PRESENT" | "ABSENT" | "LATE";
 

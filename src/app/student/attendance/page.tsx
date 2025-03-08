@@ -61,9 +61,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import Loader from "../(components)/Loader";
 import { useReactToPrint } from "react-to-print";
 import * as XLSX from "xlsx";
+import Loader from "../(components)/Loader";
 
 type AttendanceStatus = "PRESENT" | "ABSENT" | "LATE";
 
@@ -93,6 +93,9 @@ const AttendancePage = () => {
   });
 
   // Fetch attendance records with filters
+  const storedUser = localStorage.getItem("user");
+  const studentId = storedUser ? JSON.parse(storedUser).id : undefined;
+
   const {
     data: attendanceData,
     refetch,
@@ -100,7 +103,7 @@ const AttendancePage = () => {
   } = api.attendanceOverview.getAttendanceRecords.useQuery({
     skip: (page - 1) * pageSize,
     take: pageSize,
-    studentIds: studentIds.length > 0 ? studentIds : undefined,
+    studentIds: studentId ? [studentId] : undefined,
     subjectIds: subjectIds.length > 0 ? subjectIds : undefined,
     startDate,
     endDate,
@@ -510,64 +513,6 @@ const AttendancePage = () => {
                         </div>
 
                         <Accordion type="single" collapsible className="w-full">
-                          <AccordionItem value="students">
-                            <AccordionTrigger className="text-sm font-medium">
-                              Students
-                              {studentIds.length > 0 && (
-                                <Badge
-                                  variant="secondary"
-                                  className="ml-2 bg-primary/10"
-                                >
-                                  {studentIds.length}
-                                </Badge>
-                              )}
-                            </AccordionTrigger>
-                            <AccordionContent>
-                              <div className="mb-2 mt-2">
-                                <Input
-                                  placeholder="Search students..."
-                                  className="mb-2"
-                                />
-                              </div>
-                              <div className="max-h-[200px] overflow-y-auto">
-                                {studentsData?.data.map((student) => (
-                                  <div
-                                    key={student.id}
-                                    className="flex items-center space-x-2 py-1"
-                                  >
-                                    <Checkbox
-                                      id={`student-${student.id}`}
-                                      checked={studentIds.includes(student.id)}
-                                      onCheckedChange={() =>
-                                        handleStudentFilterChange(student.id)
-                                      }
-                                    />
-                                    <Label
-                                      htmlFor={`student-${student.id}`}
-                                      className="flex flex-1 items-center space-x-2 text-sm"
-                                    >
-                                      <Avatar className="h-6 w-6">
-                                        <AvatarImage
-                                          src={student.image}
-                                          alt={student.firstname}
-                                        />
-                                        <AvatarFallback className="text-xs">
-                                          {getInitials(
-                                            student.firstname,
-                                            student.lastName,
-                                          )}
-                                        </AvatarFallback>
-                                      </Avatar>
-                                      <span>
-                                        {student.firstname} {student.lastName}
-                                      </span>
-                                    </Label>
-                                  </div>
-                                ))}
-                              </div>
-                            </AccordionContent>
-                          </AccordionItem>
-
                           <AccordionItem value="subjects">
                             <AccordionTrigger className="text-sm font-medium">
                               Subjects

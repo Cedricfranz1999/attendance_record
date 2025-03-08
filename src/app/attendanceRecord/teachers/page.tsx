@@ -150,14 +150,12 @@ const TeachersPage = () => {
           toast({
             title: "Camera Access Denied",
             description: "Please allow camera access to take a photo.",
-            variant: "destructive",
           });
         });
     } else {
       toast({
         title: "Camera Not Supported",
         description: "Your browser doesn't support camera access.",
-        variant: "destructive",
       });
     }
   };

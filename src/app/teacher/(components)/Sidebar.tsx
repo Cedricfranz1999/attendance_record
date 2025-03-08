@@ -28,35 +28,8 @@ const Sidebar = () => {
 
   const links = [
     {
-      href: "/attendanceRecord/dashboard",
-      label: "Dashboard",
-      icon: <LayoutDashboard className="h-4 w-4" />,
-    },
-    {
-      href: "/attendanceRecord/students",
-      label: "Students",
-      icon: <ShieldUser className="h-4 w-4" />,
-    },
-    {
-      href: "/attendanceRecord/teachers",
-      label: "Teachers",
-      icon: <Users2 className="h-4 w-4" />,
-    },
-
-    {
-      href: "/attendanceRecord/subjects",
-      label: "Subjects",
-      icon: <NotebookText className="h-4 w-4" />,
-    },
-
-    {
-      href: "/attendanceRecord/attendance",
+      href: "/teacher/attendance",
       label: "Attendance",
-      icon: <NotebookText className="h-4 w-4" />,
-    },
-    {
-      href: "/attendanceRecord/attendance_overview",
-      label: "Attendances",
       icon: <NotebookText className="h-4 w-4" />,
     },
   ];
@@ -66,9 +39,8 @@ const Sidebar = () => {
       <div className="flex h-full flex-col gap-2">
         <div className="flex h-14 items-center border-b px-4 lg:h-[60px] lg:px-6">
           <Link href="/" className="flex items-center gap-2 font-semibold">
-            <span className="text-xl font-semibold text-[#383838]">
-              Attendance Record
-            </span>
+            <img src="/logo.jpg" width={50} className="rounded-full" />
+            <span className="text-3xl font-semibold text-[#383838]">NLCM</span>
           </Link>
         </div>
 

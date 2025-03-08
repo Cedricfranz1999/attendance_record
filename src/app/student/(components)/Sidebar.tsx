@@ -28,35 +28,8 @@ const Sidebar = () => {
 
   const links = [
     {
-      href: "/attendanceRecord/dashboard",
-      label: "Dashboard",
-      icon: <LayoutDashboard className="h-4 w-4" />,
-    },
-    {
-      href: "/attendanceRecord/students",
-      label: "Students",
-      icon: <ShieldUser className="h-4 w-4" />,
-    },
-    {
-      href: "/attendanceRecord/teachers",
-      label: "Teachers",
-      icon: <Users2 className="h-4 w-4" />,
-    },
-
-    {
-      href: "/attendanceRecord/subjects",
-      label: "Subjects",
-      icon: <NotebookText className="h-4 w-4" />,
-    },
-
-    {
-      href: "/attendanceRecord/attendance",
+      href: "/student/attendance",
       label: "Attendance",
-      icon: <NotebookText className="h-4 w-4" />,
-    },
-    {
-      href: "/attendanceRecord/attendance_overview",
-      label: "Attendances",
       icon: <NotebookText className="h-4 w-4" />,
     },
   ];

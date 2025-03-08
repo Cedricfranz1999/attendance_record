@@ -1,14 +1,12 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import ProtectedRoute from "../_components/protector";
 import Header from "./(components)/Headers";
 import Sidebar from "./(components)/Sidebar";
-import { useUser } from "@clerk/nextjs";
-import ProtectedAdminRoute from "../_components/protectoradmin";
 
 const AdminLayout = ({ children }: { children: React.ReactNode }) => {
   return (
-    <ProtectedAdminRoute>
+    <ProtectedRoute>
       <div className="grid min-h-screen w-full md:grid-cols-[220px_1fr] lg:grid-cols-[280px_1fr]">
         <Sidebar />
         <div className="flex flex-col">
@@ -18,7 +16,7 @@ const AdminLayout = ({ children }: { children: React.ReactNode }) => {
           </main>
         </div>
       </div>
-    </ProtectedAdminRoute>
+    </ProtectedRoute>
   );
 };
 

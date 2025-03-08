@@ -15,6 +15,8 @@ import {
   Droplets,
   UsersRound,
   Baby,
+  NotebookText,
+  ShieldUser,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -26,66 +28,47 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { SignedIn, UserButton, useUser } from "@clerk/nextjs";
+import { Label } from "@/components/ui/label";
 
 const links = [
   {
-    href: "/admin/dashboard",
+    href: "/attendanceRecord/dashboard",
     label: "Dashboard",
-    icon: <LayoutDashboard className="h-5 w-5" />,
+    icon: <LayoutDashboard className="h-4 w-4" />,
   },
   {
-    href: "/admin/attendance",
+    href: "/attendanceRecord/students",
+    label: "Students",
+    icon: <ShieldUser className="h-4 w-4" />,
+  },
+  {
+    href: "/attendanceRecord/teachers",
+    label: "Teachers",
+    icon: <Users2 className="h-4 w-4" />,
+  },
+
+  {
+    href: "/attendanceRecord/subjects",
+    label: "Subjects",
+    icon: <NotebookText className="h-4 w-4" />,
+  },
+
+  {
+    href: "/attendanceRecord/attendance",
     label: "Attendance",
-    icon: <SquareArrowDown className="h-5 w-5" />,
+    icon: <NotebookText className="h-4 w-4" />,
   },
   {
-    href: "/admin/training",
-    label: "Trainee Management",
-    icon: <KeyboardMusic className="h-5 w-5" />,
-  },
-  {
-    href: "/admin/members",
-    label: "NLCM Members",
-    icon: <Users2 className="h-5 w-5" />,
-  },
-  {
-    href: "/admin/soul-winners",
-    label: "Soul Winners",
-    icon: <Mailbox className="h-5 w-5" />,
-  },
-  {
-    href: "/admin/making-disciple",
-    label: "Making Disciple",
-    icon: <Component className="h-5 w-5" />,
-  },
-  {
-    href: "/admin/prayer-list",
-    label: "Prayer List",
-    icon: <HandCoins className="h-5 w-5" />,
-  },
-  {
-    href: "/admin/lifestyle-skill-record",
-    label: "Lifestyle and Skill Record",
-    icon: <NotepadText className="h-5 w-5" />,
-  },
-  {
-    href: "/admin/baptism",
-    label: "Baptism Record",
-    icon: <Droplets className="h-5 w-5" />,
-  },
-  {
-    href: "/admin/dedication",
-    label: "Dedication Record",
-    icon: <Baby className="h-5 w-5" />,
-  },
-  {
-    href: "/admin/marriage",
-    label: "Marriage Record",
-    icon: <UsersRound className="h-5 w-5" />,
+    href: "/attendanceRecord/attendance_overview",
+    label: "Attendances",
+    icon: <NotebookText className="h-4 w-4" />,
   },
 ];
 
 const Header = () => {
+  const { user } = useUser();
+  console.log(user);
   const router = useRouter();
 
   const handleLogout = () => {
@@ -109,8 +92,7 @@ const Header = () => {
         <SheetContent side="left" className="flex flex-col p-0">
           <div className="flex h-14 items-center border-b px-2 lg:h-[60px] lg:px-6">
             <Link href="/" className="flex items-center gap-2 font-semibold">
-              <img src="/logo.jpg" width={25} className="rounded-full" />
-              <span>NLCM</span>
+              <span>Attendance Record</span>
             </Link>
           </div>
           <nav className="grid gap-2 text-lg font-medium">
@@ -138,24 +120,28 @@ const Header = () => {
         </form>
       </div>
 
-      {/* User Account Dropdown */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="secondary" size="icon" className="rounded-full">
-            <CircleUser className="h-5 w-5" />
-            <span className="sr-only">Toggle user menu</span>
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuLabel>My Account</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => router.push("/admin/settings")}>
-            Settings
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={handleLogout}>Logout</DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <div>
+        {" "}
+        <div className="mb-2 flex flex-col">
+          <SignedIn>
+            <div>
+              <div className="flex w-full flex-shrink-0 items-center justify-between gap-2 p-2">
+                <div className="ml-2 flex items-center justify-center space-x-2">
+                  <div>
+                    <UserButton afterSignOutUrl="/sign-in" />
+                  </div>
+                  <div className="flex flex-col items-start justify-start">
+                    <Label className="text-center text-neutral-400">
+                      {user?.firstName} <br /> {user?.lastName}
+                    </Label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </SignedIn>
+          <div className="px-4"></div>
+        </div>
+      </div>
     </header>
   );
 };

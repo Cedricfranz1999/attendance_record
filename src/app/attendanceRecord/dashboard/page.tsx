@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { api } from "@/trpc/react";
 import {
   Card,
@@ -87,40 +87,60 @@ const DashboardPage = () => {
         ? startOfMonth(today)
         : subDays(today, 30);
 
+  // Create the input object based on selected subject
+  const subjectInput =
+    selectedSubject !== "all" ? { subjectId: selectedSubject } : undefined;
+
   // Fetch summary statistics
   const {
     data: summaryData,
     isLoading: loadingSummary,
     error: summaryError,
-  } = api.dashboard.getSummaryStats.useQuery(undefined, {});
+    refetch: refetchSummary,
+  } = api.dashboard.getSummaryStats.useQuery(subjectInput, {});
 
   // Fetch attendance status distribution
   const {
     data: statusDistribution,
     isLoading: loadingStatus,
     error: statusError,
-  } = api.dashboard.getAttendanceStatusDistribution.useQuery(undefined, {});
+    refetch: refetchStatus,
+  } = api.dashboard.getAttendanceStatusDistribution.useQuery(subjectInput, {});
 
   // Fetch attendance trends
-  const { data: attendanceTrends, isLoading: loadingTrends } =
-    api.dashboard.getAttendanceTrends.useQuery({
-      startDate,
-      endDate: today,
-    });
+  const {
+    data: attendanceTrends,
+    isLoading: loadingTrends,
+    refetch: refetchTrends,
+  } = api.dashboard.getAttendanceTrends.useQuery({
+    startDate,
+    endDate: today,
+    ...(selectedSubject !== "all" && { subjectId: selectedSubject }),
+  });
 
   // Fetch subject-wise attendance
-  const { data: subjectAttendance, isLoading: loadingSubjects } =
-    api.dashboard.getSubjectAttendance.useQuery();
+  const {
+    data: subjectAttendance,
+    isLoading: loadingSubjects,
+    refetch: refetchSubjects,
+  } = api.dashboard.getSubjectAttendance.useQuery(subjectInput, {});
 
   // Fetch student attendance performance
-  const { data: studentPerformance, isLoading: loadingStudents } =
-    api.dashboard.getStudentPerformance.useQuery({
-      limit: 10,
-    });
+  const {
+    data: studentPerformance,
+    isLoading: loadingStudents,
+    refetch: refetchStudents,
+  } = api.dashboard.getStudentPerformance.useQuery({
+    limit: 10,
+    ...(selectedSubject !== "all" && { subjectId: selectedSubject }),
+  });
 
   // Fetch day of week attendance patterns
-  const { data: dayOfWeekData, isLoading: loadingDayOfWeek } =
-    api.dashboard.getDayOfWeekAttendance.useQuery();
+  const {
+    data: dayOfWeekData,
+    isLoading: loadingDayOfWeek,
+    refetch: refetchDayOfWeek,
+  } = api.dashboard.getDayOfWeekAttendance.useQuery(subjectInput, {});
 
   // Fetch subjects for filter
   const { data: subjects } = api.attendanceOverview.getSubjects.useQuery({
@@ -128,34 +148,76 @@ const DashboardPage = () => {
   });
 
   // Fetch monthly comparison data
-  const { data: monthlyData, isLoading: loadingMonthly } =
-    api.dashboard.getMonthlyComparison.useQuery();
+  const {
+    data: monthlyData,
+    isLoading: loadingMonthly,
+    refetch: refetchMonthly,
+  } = api.dashboard.getMonthlyComparison.useQuery(subjectInput, {});
 
   // Fetch time of day patterns
-  const { data: timeOfDayData, isLoading: loadingTimeOfDay } =
-    api.dashboard.getTimeOfDayPatterns.useQuery();
+  const {
+    data: timeOfDayData,
+    isLoading: loadingTimeOfDay,
+    refetch: refetchTimeOfDay,
+  } = api.dashboard.getTimeOfDayPatterns.useQuery(subjectInput, {});
 
   // Fetch teacher performance
-  const { data: teacherData, isLoading: loadingTeacher } =
-    api.dashboard.getTeacherPerformance.useQuery();
+  const {
+    data: teacherData,
+    isLoading: loadingTeacher,
+    refetch: refetchTeacher,
+  } = api.dashboard.getTeacherPerformance.useQuery(subjectInput, {
+  
+  });
 
   // Fetch attendance duration data
-  const { data: durationData, isLoading: loadingDuration } =
-    api.dashboard.getAttendanceDuration.useQuery();
+  const {
+    data: durationData,
+    isLoading: loadingDuration,
+    refetch: refetchDuration,
+  } = api.dashboard.getAttendanceDuration.useQuery(subjectInput, {
+    
+  });
+
+  // Use effect to refetch data when subject or time range changes
+  useEffect(() => {
+    refetchSummary();
+    refetchStatus();
+    refetchTrends();
+    refetchSubjects();
+    refetchStudents();
+    refetchDayOfWeek();
+    refetchMonthly();
+    refetchTimeOfDay();
+    refetchTeacher();
+    refetchDuration();
+  }, [
+    selectedSubject,
+    timeRange,
+    refetchSummary,
+    refetchStatus,
+    refetchTrends,
+    refetchSubjects,
+    refetchStudents,
+    refetchDayOfWeek,
+    refetchMonthly,
+    refetchTimeOfDay,
+    refetchTeacher,
+    refetchDuration,
+  ]);
 
   // Check if any data is loading
   const isLoading =
-    (loadingSummary ||
-      loadingStatus ||
-      loadingTrends ||
-      loadingSubjects ||
-      loadingStudents ||
-      loadingDayOfWeek ||
-      loadingMonthly ||
-      loadingTimeOfDay ||
-      loadingTeacher ||
-      loadingDuration) &&
-    !hasError;
+    loadingSummary ||
+    loadingStatus ||
+    loadingTrends ||
+    loadingSubjects ||
+    loadingStudents ||
+    loadingDayOfWeek ||
+    loadingMonthly ||
+    loadingTimeOfDay ||
+    loadingTeacher ||
+    loadingDuration;
 
   // Format data for charts
   const formatStatusData = () => {

@@ -106,7 +106,6 @@ const AttendancePage = () => {
         toast({
           title: "Error",
           description: error.message || "Failed to save attendance",
-          variant: "destructive",
         });
       },
     },
@@ -136,7 +135,6 @@ const AttendancePage = () => {
       toast({
         title: "Error",
         description: "Please select a date",
-        variant: "destructive",
       });
       return;
     }
