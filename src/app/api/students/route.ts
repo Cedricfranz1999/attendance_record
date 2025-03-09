@@ -1,34 +1,35 @@
-import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
-import { type NextRequest } from "next/server";
+import { PrismaClient } from "@prisma/client";
 
-import { env } from "@/env";
-import { appRouter } from "@/server/api/root";
-import { createTRPCContext } from "@/server/api/trpc";
+const prisma = new PrismaClient();
 
-/**
- * This wraps the `createTRPCContext` helper and provides the required context for the tRPC API when
- * handling a HTTP request (e.g. when you make requests from Client Components).
- */
-const createContext = async (req: NextRequest) => {
-  return createTRPCContext({
-    headers: req.headers,
-  });
-};
+export async function GET() {
+  try {
+    console.log("Fetching students..."); // Debug log
+    const students = await prisma.students.findMany({
+      select: {
+        id: true,
+        firstname: true,
+        middleName: true,
+        lastName: true,
+        image: true,
+      },
+    });
+    console.log("Students fetched:", students); // Debug log
 
-const handler = (req: NextRequest) =>
-  fetchRequestHandler({
-    endpoint: "/api/trpc",
-    req,
-    router: appRouter,
-    createContext: () => createContext(req),
-    onError:
-      env.NODE_ENV === "development"
-        ? ({ path, error }) => {
-            console.error(
-              `❌ tRPC failed on ${path ?? "<no-path>"}: ${error.message}`,
-            );
-          }
-        : undefined,
-  });
-
-export { handler as GET, handler as POST };
+    // Correctly format the Response object
+    return new Response(JSON.stringify(students), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching students:", error); // Debug log
+    return new Response(JSON.stringify({ error: "Failed to fetch students" }), {
+      status: 500,
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+  }
+}
