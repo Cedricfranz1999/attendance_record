@@ -2,6 +2,35 @@ import { z } from "zod";
 import { createTRPCRouter, publicProcedure } from "../trpc";
 
 export const SubjectsRouter = createTRPCRouter({
+  toggleSubjectActive: publicProcedure
+    .input(z.object({ subjectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      // First, deactivate all subjects
+      await ctx.db.subject.updateMany({
+        data: {
+          active: false,
+        },
+      });
+
+      // Get the current subject
+      const subject = await ctx.db.subject.findUnique({
+        where: { id: input.subjectId },
+      });
+
+      if (!subject) {
+        throw new Error("Subject not found");
+      }
+
+      // Toggle the active status of the current subject (always set to true since we deactivated all)
+      const updatedSubject = await ctx.db.subject.update({
+        where: { id: input.subjectId },
+        data: {
+          active: true, // Always set to true since we want to activate this one
+        },
+      });
+
+      return updatedSubject;
+    }),
   getSubjects: publicProcedure
     .input(
       z.object({

@@ -6,6 +6,7 @@ import { type Metadata } from "next";
 import { TRPCReactProvider } from "@/trpc/react";
 import { Toaster } from "@/components/ui/toaster";
 import { ClerkProvider } from "@clerk/nextjs";
+import CronForAttendance from "./attendanceRecord/(components)/CronForAttendance";
 
 export const metadata: Metadata = {
   title: "Create T3 App",

@@ -73,6 +73,35 @@ type StudentAttendance = {
   changed?: boolean; // Track if the status has been changed
 };
 
+// Format date for display
+const formatDate = (dateString: string | Date) => {
+  const date = new Date(dateString);
+  return date.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+};
+
+// Format time for display
+const formatTime = (date: Date | null | undefined) => {
+  if (!date) return "--:--";
+  return new Date(date).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+};
+
+// Format break time for display
+const formatBreakTime = (seconds: number | null | undefined) => {
+  if (seconds === null || seconds === undefined) return "10:00";
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
+};
+
 export default function AttendanceRecordPage() {
   const params = useParams();
   const attendanceId = Number(params.id);
@@ -106,6 +135,7 @@ export default function AttendanceRecordPage() {
       { enabled: !!subjectId },
     );
 
+  console.log("OWSHIE ", subjectData);
   // Fetch students with their attendance records for this attendance and subject
   const {
     data: studentsData,
@@ -239,6 +269,24 @@ export default function AttendanceRecordPage() {
     },
   });
 
+  // Toggle subject active status mutation
+  const toggleSubjectActive = api.subjects.toggleSubjectActive.useMutation({
+    onSuccess: (data) => {
+      toast({
+        title: "Success",
+        description: `Subject ${data.active ? "activated" : "deactivated"} successfully`,
+        className: "bg-green-50 border-green-200",
+      });
+      refetch();
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to toggle subject active status",
+      });
+    },
+  });
+
   // Calculate subject duration and set subject start time when subject data is loaded
   useEffect(() => {
     if (subjectData) {
@@ -367,7 +415,7 @@ export default function AttendanceRecordPage() {
   // Handle status change
   const handleStatusChange = (
     studentId: number,
-    newStatus: "PRESENT" | "ABSENT" | "LATE",
+    newStatus: "PRESENT" | "ABSENT" | "LATE" | "EXCUSED",
   ) => {
     // Update local state first for immediate UI feedback
     setStudents((prev) =>
@@ -381,6 +429,12 @@ export default function AttendanceRecordPage() {
     // Find the student to get the recordId if it exists
     const student = students.find((s) => s.id === studentId);
 
+    // Only send valid statuses to the backend (exclude EXCUSED if the backend doesn't support it)
+    const validStatus =
+      newStatus === "EXCUSED"
+        ? "ABSENT"
+        : (newStatus as "PRESENT" | "ABSENT" | "LATE");
+
     // Trigger the mutation immediately
     updateAttendance.mutate({
       records: [
@@ -389,7 +443,7 @@ export default function AttendanceRecordPage() {
           studentId: studentId,
           attendanceId,
           subjectId,
-          status: newStatus,
+          status: validStatus,
           // Don't include timeStart and timeEnd in this update
         },
       ],
@@ -558,33 +612,13 @@ export default function AttendanceRecordPage() {
     });
   };
 
-  // Format date for display
-  const formatDate = (dateString: string | Date) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-  };
+  // Handle toggle active status
+  const handleToggleActive = () => {
+    if (!subjectId) return;
 
-  // Format time for display
-  const formatTime = (date: Date | null | undefined) => {
-    if (!date) return "--:--";
-    return new Date(date).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
+    toggleSubjectActive.mutate({
+      subjectId,
     });
-  };
-
-  // Format break time for display
-  const formatBreakTime = (seconds: number | null | undefined) => {
-    if (seconds === null || seconds === undefined) return "10:00";
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
   };
 
   // Calculate duration between two times
@@ -597,8 +631,8 @@ export default function AttendanceRecordPage() {
     const startTime = new Date(start).getTime();
     let endTime = end ? new Date(end).getTime() : currentTime.getTime();
 
-    // Apply the subject duration limit if there's no end time yet
-    if (!end && subjectDuration > 0) {
+    // Always apply the subject duration limit
+    if (subjectDuration > 0) {
       const maxEndTime = startTime + subjectDuration * 60 * 1000;
       endTime = Math.min(endTime, maxEndTime);
     }
@@ -622,8 +656,8 @@ export default function AttendanceRecordPage() {
     const startTime = new Date(start).getTime();
     let endTime = end ? new Date(end).getTime() : currentTime.getTime();
 
-    // Apply the subject duration limit if there's no end time yet
-    if (!end && subjectDuration > 0) {
+    // Always apply the subject duration limit
+    if (subjectDuration > 0) {
       const maxEndTime = startTime + subjectDuration * 60 * 1000;
       endTime = Math.min(endTime, maxEndTime);
     }
@@ -728,15 +762,14 @@ export default function AttendanceRecordPage() {
                       )}
                     </div>
                   )}
-                  {subjectDuration > 0 && (
-                    <div className="mt-1 flex items-center text-sm">
-                      <Clock className="mr-1 h-4 w-4" />
-                      <span>Duration: {subjectDuration} minutes</span>
-                    </div>
-                  )}
+
+                  <div className="mt-1 flex items-center text-sm">
+                    <Clock className="mr-1 h-4 w-4" />
+                    <span>Duration: {subjectData?.duration} minutes</span>
+                  </div>
                 </CardDescription>
               </div>
-              <div>
+              <div className="flex flex-col gap-2 md:flex-row">
                 <Button
                   variant="outline"
                   size="sm"
@@ -745,6 +778,13 @@ export default function AttendanceRecordPage() {
                 >
                   <RefreshCw className="h-4 w-4" />
                   Auto-Adjust Status
+                </Button>
+                <Button
+                  className={`${subjectData?.active ? "bg-green-500 hover:bg-green-600" : "bg-gray-300 hover:bg-green-500"}`}
+                  size="sm"
+                  onClick={handleToggleActive}
+                >
+                  {subjectData?.active ? "Active" : "Inactive"}
                 </Button>
               </div>
             </div>
@@ -775,7 +815,7 @@ export default function AttendanceRecordPage() {
                       <TableHead className="w-[150px]">Status</TableHead>
                       <TableHead className="w-[120px]">Time Start</TableHead>
                       <TableHead className="w-[120px]">Time End</TableHead>
-                      <TableHead className="w-[120px]">Total</TableHead>
+                      <TableHead className="w-[120px]">Time Render</TableHead>
                       <TableHead className="w-[100px]">Break Left</TableHead>
                       <TableHead className="w-[120px]">Percentage</TableHead>
                       <TableHead className="w-[220px]">Actions</TableHead>
@@ -867,7 +907,11 @@ export default function AttendanceRecordPage() {
                                   onValueChange={(value) =>
                                     handleStatusChange(
                                       student.id,
-                                      value as "PRESENT" | "ABSENT" | "LATE",
+                                      value as
+                                        | "PRESENT"
+                                        | "ABSENT"
+                                        | "LATE"
+                                        | "EXCUSED",
                                     )
                                   }
                                 >
@@ -933,137 +977,146 @@ export default function AttendanceRecordPage() {
                               </div>
                             </TableCell>
                             <TableCell>
-                              {student.recordId ? (
-                                <div className="flex flex-wrap gap-2">
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
-                                          onClick={() =>
+                              <div className="flex flex-wrap gap-2">
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                          if (!student.recordId) {
+                                            // Create record first with current status
+                                            updateAttendance.mutate({
+                                              records: [
+                                                {
+                                                  studentId: student.id,
+                                                  attendanceId,
+                                                  subjectId,
+                                                  status:
+                                                    student.status === "EXCUSED"
+                                                      ? "ABSENT"
+                                                      : student.status,
+                                                },
+                                              ],
+                                            });
+                                            // The refetch will update the student.recordId
+                                            // But for immediate feedback, we can simulate the start
                                             handleStartTimeTracking(
-                                              student.recordId!,
-                                            )
+                                              student.recordId || -1,
+                                            );
+                                          } else {
+                                            handleStartTimeTracking(
+                                              student.recordId,
+                                            );
                                           }
-                                          className="h-8 px-2 py-0"
-                                          disabled={!!student.timeStart}
-                                        >
-                                          <Clock className="mr-1 h-3 w-3" />
-                                          Start
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        {student.timeStart
-                                          ? "Time tracking already started"
-                                          : "Start time tracking"}
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
+                                        }}
+                                        className="h-8 px-2 py-0"
+                                        disabled={!!student.timeStart}
+                                      >
+                                        <Clock className="mr-1 h-3 w-3" />
+                                        Start
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      {student.timeStart
+                                        ? "Time tracking already started"
+                                        : "Start time tracking"}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
 
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
-                                          onClick={() =>
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                          if (student.recordId) {
                                             handleStopTimeTracking(
-                                              student.recordId!,
-                                            )
+                                              student.recordId,
+                                            );
                                           }
-                                          className="h-8 px-2 py-0"
-                                          disabled={
-                                            !student.timeStart ||
-                                            !!student.timeEnd
-                                          }
-                                        >
-                                          <Square className="mr-1 h-3 w-3" />
-                                          End
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        {!student.timeStart
-                                          ? "Start time tracking first"
-                                          : student.timeEnd
-                                            ? "Time tracking already ended"
-                                            : hasReachedLimit
-                                              ? "Maximum duration reached"
-                                              : "End time tracking"}
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
+                                        }}
+                                        className="h-8 px-2 py-0"
+                                        disabled={
+                                          !student.recordId ||
+                                          !student.timeStart ||
+                                          !!student.timeEnd
+                                        }
+                                      >
+                                        <Square className="mr-1 h-3 w-3" />
+                                        End
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      {!student.timeStart
+                                        ? "Start time tracking first"
+                                        : student.timeEnd
+                                          ? "Time tracking already ended"
+                                          : hasReachedLimit
+                                            ? "Maximum duration reached"
+                                            : "End time tracking"}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
 
-                                  {isActive && (
-                                    <>
-                                      {!isOnBreak ? (
-                                        <TooltipProvider>
-                                          <Tooltip>
-                                            <TooltipTrigger asChild>
-                                              <Button
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() =>
-                                                  handleStartBreakTime(
-                                                    student.recordId!,
-                                                  )
-                                                }
-                                                className="h-8 px-2 py-0"
-                                                disabled={hasNoBreakTime}
-                                              >
-                                                <Pause className="mr-1 h-3 w-3" />
-                                                Pause
-                                              </Button>
-                                            </TooltipTrigger>
-                                            <TooltipContent>
-                                              {hasNoBreakTime
-                                                ? "No break time remaining"
-                                                : "Start break (pause tracking)"}
-                                            </TooltipContent>
-                                          </Tooltip>
-                                        </TooltipProvider>
-                                      ) : (
-                                        <TooltipProvider>
-                                          <Tooltip>
-                                            <TooltipTrigger asChild>
-                                              <Button
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() =>
-                                                  handleStopBreakTime(
-                                                    student.recordId!,
-                                                  )
-                                                }
-                                                className="h-8 bg-blue-50 px-2 py-0"
-                                              >
-                                                <Play className="mr-1 h-3 w-3" />
-                                                Resume
-                                              </Button>
-                                            </TooltipTrigger>
-                                            <TooltipContent>
-                                              Stop break and resume tracking
-                                            </TooltipContent>
-                                          </Tooltip>
-                                        </TooltipProvider>
-                                      )}
-                                    </>
-                                  )}
-                                </div>
-                              ) : (
-                                <div className="text-xs text-muted-foreground">
-                                  Save status first
-                                </div>
-                              )}
-                              {hasReachedLimit && (
-                                <div className="mt-1 text-xs text-amber-600">
-                                  Max duration reached
-                                </div>
-                              )}
-                              {hasNoBreakTime && isActive && (
-                                <div className="mt-1 text-xs text-red-600">
-                                  No break time left
-                                </div>
-                              )}
+                                {isActive && student.recordId && (
+                                  <>
+                                    {!isOnBreak ? (
+                                      <TooltipProvider>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() =>
+                                                handleStartBreakTime(
+                                                  student.recordId!,
+                                                )
+                                              }
+                                              className="h-8 px-2 py-0"
+                                              disabled={hasNoBreakTime}
+                                            >
+                                              <Pause className="mr-1 h-3 w-3" />
+                                              Pause
+                                            </Button>
+                                          </TooltipTrigger>
+                                          <TooltipContent>
+                                            {hasNoBreakTime
+                                              ? "No break time remaining"
+                                              : "Start break (pause tracking)"}
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
+                                    ) : (
+                                      <TooltipProvider>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() =>
+                                                handleStopBreakTime(
+                                                  student.recordId!,
+                                                )
+                                              }
+                                              className="h-8 bg-blue-50 px-2 py-0"
+                                            >
+                                              <Play className="mr-1 h-3 w-3" />
+                                              Resume
+                                            </Button>
+                                          </TooltipTrigger>
+                                          <TooltipContent>
+                                            Stop break and resume tracking
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
+                                    )}
+                                  </>
+                                )}
+                              </div>
                             </TableCell>
                           </motion.tr>
                         );

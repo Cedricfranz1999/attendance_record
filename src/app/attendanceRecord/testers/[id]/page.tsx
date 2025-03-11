@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import type React from "react";
+
+import { useState } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { api } from "@/trpc/react";
 import { Button } from "@/components/ui/button";
@@ -45,6 +47,7 @@ import {
   Clock,
   Loader,
   Eye,
+  CheckCircle,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -55,6 +58,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useRouter, usePathname } from "next/navigation";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const SubjectsPage = () => {
   const { toast } = useToast();
@@ -77,6 +86,24 @@ const SubjectsPage = () => {
   // Fetch all teachers for the dropdown
   const { data: teachers } = api.subjects.getAllTeachers.useQuery();
   const pathname = usePathname(); // Get the current path
+
+  // Toggle subject active status mutation
+  const toggleSubjectActive = api.subjects.toggleSubjectActive.useMutation({
+    onSuccess: (data) => {
+      toast({
+        title: "Success",
+        description: `Subject ${data.active ? "activated" : "deactivated"} successfully`,
+        className: "bg-green-50 border-green-200",
+      });
+      refetch();
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to toggle subject active status",
+      });
+    },
+  });
 
   const upsertSubject = api.subjects.createOrUpdateSubject.useMutation({
     onSuccess: async () => {
@@ -129,6 +156,13 @@ const SubjectsPage = () => {
     setDialogOpen(true);
   };
 
+  // Handle toggle active status
+  const handleToggleActive = (subjectId: number) => {
+    toggleSubjectActive.mutate({
+      subjectId,
+    });
+  };
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
@@ -173,9 +207,7 @@ const SubjectsPage = () => {
   };
 
   const getTeacherName = (teacher: any) => {
-    return `${teacher.firstname} ${
-      teacher.middleName ? teacher.middleName + " " : ""
-    }${teacher.lastName}`;
+    return `${teacher.firstname} ${teacher.middleName ? teacher.middleName + " " : ""}${teacher.lastName}`;
   };
 
   const getInitials = (firstname: string, lastName: string) => {
@@ -185,7 +217,9 @@ const SubjectsPage = () => {
   return (
     <>
       {isLoading ? (
-        <Loader />
+        <div className="flex h-screen items-center justify-center">
+          <Loader className="h-8 w-8 animate-spin text-primary" />
+        </div>
       ) : (
         <div className="container mx-auto p-2 md:p-4">
           <motion.div
@@ -277,8 +311,8 @@ const SubjectsPage = () => {
                             End Time
                           </TableHead>
                           <TableHead>Duration</TableHead>
-                          <TableHead>subject_order</TableHead>
-
+                          <TableHead>Order</TableHead>
+                          <TableHead>Status</TableHead>
                           <TableHead>Actions</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -287,7 +321,7 @@ const SubjectsPage = () => {
                           {data?.data.length === 0 && (
                             <TableRow>
                               <TableCell
-                                colSpan={6}
+                                colSpan={8}
                                 className="h-24 text-center"
                               >
                                 No subjects found.
@@ -301,7 +335,9 @@ const SubjectsPage = () => {
                               animate={{ opacity: 1, y: 0 }}
                               exit={{ opacity: 0, y: -10 }}
                               transition={{ duration: 0.3 }}
-                              className="border-b transition-colors hover:bg-muted/50"
+                              className={`border-b transition-colors hover:bg-muted/50 ${
+                                subject.active ? "bg-green-50" : ""
+                              }`}
                             >
                               <TableCell className="font-medium">
                                 {subject.name}
@@ -335,7 +371,42 @@ const SubjectsPage = () => {
                                 {formatDuration(subject.duration)}
                               </TableCell>
                               <TableCell>{subject.order}</TableCell>
-
+                              <TableCell>
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant={
+                                          subject.active ? "default" : "outline"
+                                        }
+                                        size="sm"
+                                        onClick={() =>
+                                          handleToggleActive(subject.id)
+                                        }
+                                        className={`h-8 w-[90px] ${
+                                          subject.active
+                                            ? "bg-green-500 hover:bg-green-600"
+                                            : "hover:bg-green-100"
+                                        }`}
+                                      >
+                                        {subject.active ? (
+                                          <>
+                                            <CheckCircle className="mr-1 h-4 w-4" />
+                                            Active
+                                          </>
+                                        ) : (
+                                          "Inactive"
+                                        )}
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      {subject.active
+                                        ? "This subject is currently active"
+                                        : "Click to make this subject active (will deactivate other subjects)"}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              </TableCell>
                               <TableCell>
                                 <div className="flex space-x-2">
                                   <Button

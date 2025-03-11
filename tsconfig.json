@@ -37,7 +37,7 @@
     "**/*.cjs",
     "**/*.js",
     ".next/types/**/*.ts",
-    "src/app/attendanceRecord/tester/[id]"
+    "src/app/attendanceRecord/attendance/[id]"
   ],
   "exclude": ["node_modules"]
 }

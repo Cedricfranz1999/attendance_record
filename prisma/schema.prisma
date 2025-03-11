@@ -40,21 +40,25 @@ model Teacher {
     subjects   Subject[]
 }
 
+
 model Subject {
     id        Int      @id @default(autoincrement())
     name      String
     startTime DateTime?  
     endTime   DateTime?  
     duration  Int?
+    active    Boolean @default(false)
     teacherId Int
     order  Int?  @unique
     teacher   Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade, onUpdate: Cascade)
     attendanceRecords AttendanceRecord[]
 }
 
+
+
 model Attendance {
     id        Int      @id @default(autoincrement())
-    date      DateTime @unique // Ensures each date is recorded only once
+    date      DateTime @unique 
     records   AttendanceRecord[]
 }
 
@@ -62,25 +66,25 @@ model AttendanceRecord {
     id           Int       @id @default(autoincrement())
     attendanceId Int
     studentId    Int
-    subjectId    Int
+    subjectId    Int?      // Changed to optional to support standby students
     status       AttendanceStatus @default(PRESENT)
     timeStart    DateTime?
     timeEnd      DateTime?
     breakTime    Int? @default(600) 
-    paused       Boolean?          @default(false)
+    paused       Boolean?  @default(false)
     
 
     attendance   Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade, onUpdate: Cascade)
     student      Students   @relation(fields: [studentId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-    subject      Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-    
+    subject      Subject?   @relation(fields: [subjectId], references: [id], onDelete: Cascade, onUpdate: Cascade) // Made optional
 
-    @@unique([attendanceId, studentId, subjectId]) 
+    // Modified unique constraint to handle null subjectId values
+    @@unique([attendanceId, studentId, subjectId])
 }
 
 enum AttendanceStatus {
     PRESENT
     ABSENT
     LATE
-    
+    EXCUSED
 }

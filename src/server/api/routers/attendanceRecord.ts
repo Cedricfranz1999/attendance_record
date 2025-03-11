@@ -58,7 +58,7 @@ export const attendanceRecord = createTRPCRouter({
             studentId: z.number(),
             attendanceId: z.number(),
             subjectId: z.number(),
-            status: z.enum(["PRESENT", "ABSENT", "LATE"]),
+            status: z.enum(["PRESENT", "ABSENT", "LATE", "EXCUSED"]), // Updated to include EXCUSED
             timeStart: z.date().nullable().optional(),
             timeEnd: z.date().nullable().optional(),
             breakTime: z.number().nullable().optional(),
@@ -127,6 +127,7 @@ export const attendanceRecord = createTRPCRouter({
       return { count: results.length };
     }),
 
+  // Rest of your router code...
   startTimeTracking: publicProcedure
     .input(
       z.object({
@@ -366,7 +367,7 @@ export const attendanceRecord = createTRPCRouter({
         const isLate = studentStartTime > subjectStart;
 
         // Determine status based on criteria
-        let newStatus: "PRESENT" | "ABSENT" | "LATE";
+        let newStatus: "PRESENT" | "ABSENT" | "LATE" | "EXCUSED";
 
         if (percentage < input.minPercentage) {
           // Less than minimum percentage = ABSENT

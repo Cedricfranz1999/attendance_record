@@ -55,8 +55,8 @@ const Sidebar = () => {
       icon: <NotebookText className="h-4 w-4" />,
     },
     {
-      href: "/attendanceRecord/tester",
-      label: "tester",
+      href: "/attendanceRecord/testers",
+      label: "Tester",
       icon: <NotebookText className="h-4 w-4" />,
     },
   ];
