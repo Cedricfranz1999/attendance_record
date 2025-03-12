@@ -263,9 +263,8 @@ export const attendanceRecord = createTRPCRouter({
         throw new Error("Cannot stop break time after time tracking has ended");
       }
 
-      if (!record.paused) {
-        throw new Error("Break not started");
-      }
+      // No need to check if break is active - we want to ensure it's stopped regardless
+      // This fixes the issue where paused might be true but we still need to stop it
 
       // Calculate the remaining break time
       const currentBreakTime = record.breakTime || 600; // Default to 10 minutes if null
@@ -274,12 +273,12 @@ export const attendanceRecord = createTRPCRouter({
         currentBreakTime - input.elapsedBreakTime,
       );
 
-      // Update the record with the new break time and clear the break start time
+      // Update the record with the new break time and explicitly set paused to false
       return ctx.db.attendanceRecord.update({
         where: { id: input.recordId },
         data: {
           breakTime: newBreakTime,
-          paused: false, // Clear the break active flag
+          paused: false, // Always set paused to false when stopping break time
         },
       });
     }),
@@ -292,6 +291,18 @@ export const attendanceRecord = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      // If break time is 0, ensure paused is set to false
+      if (input.breakTime <= 0) {
+        return ctx.db.attendanceRecord.update({
+          where: { id: input.recordId },
+          data: {
+            breakTime: 0, // Ensure it's exactly 0
+            paused: false, // Ensure paused is false when break time is 0
+          },
+        });
+      }
+
+      // Otherwise just update the break time
       return ctx.db.attendanceRecord.update({
         where: { id: input.recordId },
         data: {

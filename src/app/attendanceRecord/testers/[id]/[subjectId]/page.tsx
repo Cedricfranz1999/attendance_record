@@ -362,15 +362,17 @@ export default function AttendanceRecordPage() {
 
             // If break time is depleted, stop the break automatically
             if (newBreakTime === 0 && student.recordId) {
+              // Call the stopBreakTime mutation when break time reaches 0
               stopBreakTime.mutate({
                 recordId: student.recordId,
                 elapsedBreakTime: currentBreakTime,
               });
 
+              // Update local state immediately
               return {
                 ...student,
                 breakTime: 0,
-                paused: false,
+                paused: false, // Set paused to false when break time reaches 0
                 breakStartTime: null,
               };
             }
@@ -378,7 +380,6 @@ export default function AttendanceRecordPage() {
             return {
               ...student,
               breakTime: newBreakTime,
-              // Keep paused state as true - don't reset it
             };
           }
           return student;
@@ -1012,7 +1013,10 @@ export default function AttendanceRecordPage() {
                                           }
                                         }}
                                         className="h-8 px-2 py-0"
-                                        disabled={!!student.timeStart}
+                                        disabled={
+                                          !!student.timeStart ||
+                                          !subjectData?.active
+                                        }
                                       >
                                         <Clock className="mr-1 h-3 w-3" />
                                         Start
