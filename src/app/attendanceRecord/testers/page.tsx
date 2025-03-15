@@ -1,8 +1,5 @@
 "use client";
-
-import type React from "react";
-
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { api } from "@/trpc/react";
 import { Button } from "@/components/ui/button";
@@ -64,6 +61,21 @@ import {
 } from "@/components/ui/popover";
 import Loader from "../(components)/Loader";
 import { useRouter } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  throw new Error(
+    "Supabase URL or Anon Key is missing in environment variables.",
+  );
+}
+
+const supabase = createClient(
+  SUPABASE_URL as string,
+  SUPABASE_ANON_KEY as string,
+);
 
 const AttendancePage = () => {
   const { toast } = useToast();
@@ -163,6 +175,41 @@ const AttendancePage = () => {
     setPage(1);
     refetch();
   };
+
+  // Real-time subscription
+  useEffect(() => {
+    const channel = supabase
+      .channel("attendance")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "Attendance" },
+        (payload) => {
+          console.log("New attendance record:", payload.new);
+          refetch();
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "Attendance" },
+        (payload) => {
+          console.log("Updated attendance record:", payload.new);
+          refetch();
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "Attendance" },
+        (payload) => {
+          console.log("Deleted attendance record:", payload.old);
+          refetch();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [refetch]);
 
   return (
     <>

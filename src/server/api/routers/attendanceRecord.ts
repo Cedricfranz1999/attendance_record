@@ -165,10 +165,7 @@ export const attendanceRecord = createTRPCRouter({
 
       // If a break is active, stop it first
       if (record.paused) {
-        // Calculate elapsed break time
-        const currentBreakTime = record.breakTime || 600;
-
-        // Update the record with the new break time
+        // Update the record to stop the break
         await ctx.db.attendanceRecord.update({
           where: { id: input.recordId },
           data: {
@@ -193,16 +190,26 @@ export const attendanceRecord = createTRPCRouter({
         }
       }
 
-      // Update the record with the calculated end time
+      // Calculate final total time in seconds if not already set
+      let totalTimeRender = record.totalTimeRender;
+      if (!totalTimeRender && record.timeStart) {
+        const startTime = new Date(record.timeStart).getTime();
+        const endTimeMs = endTime.getTime();
+        totalTimeRender = Math.floor((endTimeMs - startTime) / 1000);
+      }
+
+      // Update the record with the calculated end time and total time render
       return ctx.db.attendanceRecord.update({
         where: { id: input.recordId },
         data: {
           timeEnd: endTime,
           paused: false, // Ensure break is not active
+          totalTimeRender: totalTimeRender,
         },
       });
     }),
 
+  // Add the missing startBreakTime procedure
   startBreakTime: publicProcedure
     .input(
       z.object({
@@ -263,9 +270,6 @@ export const attendanceRecord = createTRPCRouter({
         throw new Error("Cannot stop break time after time tracking has ended");
       }
 
-      // No need to check if break is active - we want to ensure it's stopped regardless
-      // This fixes the issue where paused might be true but we still need to stop it
-
       // Calculate the remaining break time
       const currentBreakTime = record.breakTime || 600; // Default to 10 minutes if null
       const newBreakTime = Math.max(
@@ -291,24 +295,57 @@ export const attendanceRecord = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      // If break time is 0, ensure paused is set to false
-      if (input.breakTime <= 0) {
-        return ctx.db.attendanceRecord.update({
-          where: { id: input.recordId },
-          data: {
-            breakTime: 0, // Ensure it's exactly 0
-            paused: false, // Ensure paused is false when break time is 0
-          },
-        });
+      // Get the current record to check if it exists
+      const record = await ctx.db.attendanceRecord.findUnique({
+        where: { id: input.recordId },
+      });
+
+      if (!record) {
+        throw new Error("Record not found");
       }
 
-      // Otherwise just update the break time
+      // Update the break time without changing paused status
       return ctx.db.attendanceRecord.update({
         where: { id: input.recordId },
         data: {
           breakTime: input.breakTime,
+          // Don't change paused status here - we want to keep paused as true even when break time is 0
         },
       });
+    }),
+
+  updateTotalTimeRender: publicProcedure
+    .input(
+      z.object({
+        recordId: z.number(),
+        totalTimeRender: z.number(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Get the current record to check if it's paused and has break time
+      const record = await ctx.db.attendanceRecord.findUnique({
+        where: { id: input.recordId },
+      });
+
+      if (!record) {
+        throw new Error("Record not found");
+      }
+
+      // Only update totalTimeRender if:
+      // 1. Not paused, OR
+      // 2. Paused but has break time remaining
+      if (!record.paused || (record.paused && (record.breakTime || 0) > 0)) {
+        // Update the totalTimeRender field
+        return ctx.db.attendanceRecord.update({
+          where: { id: input.recordId },
+          data: {
+            totalTimeRender: input.totalTimeRender,
+          },
+        });
+      }
+
+      // If paused with no break time, don't update totalTimeRender
+      return record;
     }),
 
   autoAdjustStatus: publicProcedure

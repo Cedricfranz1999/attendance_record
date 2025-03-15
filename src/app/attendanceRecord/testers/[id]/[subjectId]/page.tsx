@@ -3,7 +3,7 @@
 import { useParams } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
 import { useToast } from "@/components/ui/use-toast";
-import { api } from "@/trpc/react";
+import { api, RouterOutputs } from "@/trpc/react";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -71,6 +71,10 @@ type StudentAttendance = {
   paused?: boolean | null; // Track if student is currently on break (from DB)
   breakStartTime?: Date | null; // When the current break started (client-side only)
   changed?: boolean; // Track if the status has been changed
+  lastActiveTime?: Date | null; // Last time the student was active (for paused with no break time)
+  totalTimeRender?: number | null; // Total time rendered in seconds
+  lastSavedBreakTime?: number | null; // Store the last saved break time from DB
+  actualTimeRender?: number | null; // Actual time rendered regardless of pause state
 };
 
 // Format date for display
@@ -102,6 +106,140 @@ const formatBreakTime = (seconds: number | null | undefined) => {
   return `${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
 };
 
+// Format duration for display
+const formatDuration = (totalSeconds: number) => {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+};
+
+// Calculate duration between two times
+const calculateDuration = (
+  start: Date | null | undefined,
+  end: Date | null | undefined,
+  studentObj?: StudentAttendance,
+  currentTimeValue?: Date,
+  subjectDurationValue?: number,
+) => {
+  // If we have totalTimeRender in the database, use that instead of calculating
+  if (
+    studentObj?.totalTimeRender !== undefined &&
+    studentObj?.totalTimeRender !== null
+  ) {
+    return formatDuration(studentObj.totalTimeRender);
+  }
+
+  if (!start) return "00:00:00";
+
+  const startTime = new Date(start).getTime();
+  let endTime;
+
+  // If end time is provided, use it
+  if (end) {
+    endTime = new Date(end).getTime();
+  }
+  // If student is paused with no break time, use lastActiveTime or don't update
+  else if (
+    studentObj &&
+    studentObj.paused &&
+    (studentObj.breakTime || 0) <= 0
+  ) {
+    if (studentObj.lastActiveTime) {
+      endTime = new Date(studentObj.lastActiveTime).getTime();
+    } else {
+      // If no lastActiveTime is available, use current time but this shouldn't happen
+      endTime = currentTimeValue
+        ? currentTimeValue.getTime()
+        : new Date().getTime();
+    }
+  }
+  // Otherwise use current time
+  else {
+    endTime = currentTimeValue
+      ? currentTimeValue.getTime()
+      : new Date().getTime();
+  }
+
+  // Always apply the subject duration limit
+  if (subjectDurationValue && subjectDurationValue > 0) {
+    const maxEndTime = startTime + subjectDurationValue * 60 * 1000;
+    endTime = Math.min(endTime, maxEndTime);
+  }
+
+  // Calculate duration
+  const durationMs = endTime - startTime;
+  const seconds = Math.floor((durationMs / 1000) % 60);
+  const minutes = Math.floor((durationMs / (1000 * 60)) % 60);
+  const hours = Math.floor(durationMs / (1000 * 60 * 60));
+
+  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+};
+
+// Calculate actual duration regardless of pause state
+const calculateActualDuration = (
+  start: Date | null | undefined,
+  end: Date | null | undefined,
+  studentObj?: StudentAttendance,
+  currentTimeValue?: Date,
+  subjectDurationValue?: number,
+) => {
+  if (!start) return "00:00:00";
+
+  // If student is paused with no break time, don't update actual time
+  if (studentObj && studentObj.paused && (studentObj.breakTime || 0) <= 0) {
+    if (
+      studentObj.actualTimeRender !== null &&
+      studentObj.actualTimeRender !== undefined
+    ) {
+      return formatDuration(studentObj.actualTimeRender);
+    }
+
+    // If no actualTimeRender is available, calculate up to lastActiveTime
+    if (studentObj.lastActiveTime) {
+      const startTime = new Date(start).getTime();
+      const lastActiveTime = new Date(studentObj.lastActiveTime).getTime();
+      const durationMs = lastActiveTime - startTime;
+      const totalSeconds = Math.floor(durationMs / 1000);
+      return formatDuration(totalSeconds);
+    }
+  }
+
+  const startTime = new Date(start).getTime();
+  let endTime;
+
+  // If end time is provided, use it
+  if (end) {
+    endTime = new Date(end).getTime();
+  } else {
+    // Otherwise use current time
+    endTime = currentTimeValue
+      ? currentTimeValue.getTime()
+      : new Date().getTime();
+  }
+
+  // Always apply the subject duration limit
+  if (subjectDurationValue && subjectDurationValue > 0) {
+    const maxEndTime = startTime + subjectDurationValue * 60 * 1000;
+    endTime = Math.min(endTime, maxEndTime);
+  }
+
+  // Calculate duration
+  const durationMs = endTime - startTime;
+  const seconds = Math.floor((durationMs / 1000) % 60);
+  const minutes = Math.floor((durationMs / (1000 * 60)) % 60);
+  const hours = Math.floor(durationMs / (1000 * 60 * 60));
+
+  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+};
+
+// Check if time render should be updated based on student state
+// We always want to update time render EXCEPT when paused=true AND breakTime=0
+const shouldUpdateTimeRender = (student: StudentAttendance) => {
+  // Only stop counting if paused AND no break time left
+  return !(student.paused && (student.breakTime || 0) <= 0);
+};
+
 export default function AttendanceRecordPage() {
   const params = useParams();
   const attendanceId = Number(params.id);
@@ -121,6 +259,17 @@ export default function AttendanceRecordPage() {
   // Use ref to track if we've initialized break start times
   const breakStartTimesInitializedRef = useRef(false);
 
+  // Add a new state to track the last time we updated totalTimeRender
+  const [lastTotalTimeUpdate, setLastTotalTimeUpdate] = useState<
+    Record<string, Date>
+  >({});
+
+  // Add a ref to track if auto-adjust is in progress
+  const autoAdjustInProgressRef = useRef(false);
+
+  // Add a ref to store the current client-side state before auto-adjust
+  const studentsBeforeAutoAdjustRef = useRef<StudentAttendance[]>([]);
+
   // Fetch attendance details
   const { data: attendanceData, isLoading: attendanceLoading } =
     api.attendanceRecord.getAttendanceById.useQuery(
@@ -135,7 +284,10 @@ export default function AttendanceRecordPage() {
       { enabled: !!subjectId },
     );
 
-  console.log("OWSHIE ", subjectData);
+  // Type for the student data from the API
+  type StudentData =
+    RouterOutputs["attendanceRecord"]["getStudentsForAttendance"][0];
+
   // Fetch students with their attendance records for this attendance and subject
   const {
     data: studentsData,
@@ -147,13 +299,108 @@ export default function AttendanceRecordPage() {
       subjectId,
       search,
     },
-    { enabled: !!attendanceId && !!subjectId },
+    {
+      enabled: !!attendanceId && !!subjectId,
+    },
   );
+
+  // Handle the success case for student data fetching
+  useEffect(() => {
+    if (studentsData && !studentsLoading) {
+      // If auto-adjust is in progress, we need to preserve client-side break times
+      if (
+        autoAdjustInProgressRef.current &&
+        studentsBeforeAutoAdjustRef.current.length > 0
+      ) {
+        const updatedStudents = studentsData.map((student: StudentData) => {
+          // Find the previous state of this student
+          const prevStudent = studentsBeforeAutoAdjustRef.current.find(
+            (s) => s.id === student.id,
+          );
+
+          // If we have previous state and the student has an attendance record
+          if (prevStudent && student.attendanceRecord?.id) {
+            return {
+              id: student.id,
+              recordId: student.attendanceRecord?.id,
+              firstname: student.firstname,
+              middleName: student.middleName,
+              lastName: student.lastName,
+              image: student.image,
+              status: student.attendanceRecord?.status || "ABSENT",
+              timeStart: student.attendanceRecord?.timeStart || null,
+              timeEnd: student.attendanceRecord?.timeEnd || null,
+              // Preserve client-side break time
+              breakTime: prevStudent.breakTime,
+              // Preserve paused state
+              paused: prevStudent.paused,
+              breakStartTime: prevStudent.breakStartTime,
+              lastActiveTime: prevStudent.lastActiveTime,
+              totalTimeRender:
+                student.attendanceRecord?.totalTimeRender || null,
+              lastSavedBreakTime: student.attendanceRecord?.breakTime || null,
+              actualTimeRender: prevStudent.actualTimeRender,
+            };
+          }
+
+          // Otherwise, use the data from the server
+          return {
+            id: student.id,
+            recordId: student.attendanceRecord?.id,
+            firstname: student.firstname,
+            middleName: student.middleName,
+            lastName: student.lastName,
+            image: student.image,
+            status: student.attendanceRecord?.status || "ABSENT",
+            timeStart: student.attendanceRecord?.timeStart || null,
+            timeEnd: student.attendanceRecord?.timeEnd || null,
+            breakTime: student.attendanceRecord?.breakTime || 600,
+            paused: student.attendanceRecord?.paused || false,
+            breakStartTime: null,
+            lastActiveTime: null,
+            totalTimeRender: student.attendanceRecord?.totalTimeRender || null,
+            lastSavedBreakTime: student.attendanceRecord?.breakTime || null,
+            actualTimeRender: null,
+          };
+        });
+
+        setStudents(updatedStudents);
+        setLoading(false);
+        breakStartTimesInitializedRef.current = false;
+        autoAdjustInProgressRef.current = false;
+        studentsBeforeAutoAdjustRef.current = [];
+      } else if (!autoAdjustInProgressRef.current) {
+        // Normal case - initialize students state when data is loaded
+        setStudents(
+          studentsData.map((student: StudentData) => ({
+            id: student.id,
+            recordId: student.attendanceRecord?.id,
+            firstname: student.firstname,
+            middleName: student.middleName,
+            lastName: student.lastName,
+            image: student.image,
+            status: student.attendanceRecord?.status || "ABSENT",
+            timeStart: student.attendanceRecord?.timeStart || null,
+            timeEnd: student.attendanceRecord?.timeEnd || null,
+            breakTime: student.attendanceRecord?.breakTime || 600, // Default to 10 minutes (600 seconds)
+            paused: student.attendanceRecord?.paused || false, // Get paused state from DB
+            breakStartTime: null, // Will be initialized in the next effect
+            lastActiveTime: null, // Will be set when needed
+            totalTimeRender: student.attendanceRecord?.totalTimeRender || null, // Get totalTimeRender from DB
+            lastSavedBreakTime: student.attendanceRecord?.breakTime || null, // Store the last saved break time
+            actualTimeRender: null, // Initialize actual time render
+          })),
+        );
+        setLoading(false);
+        breakStartTimesInitializedRef.current = false; // Reset flag to initialize break start times
+      }
+    }
+  }, [studentsData, studentsLoading]);
 
   // Update attendance records mutation
   const updateAttendance =
     api.attendanceRecord.updateAttendanceRecords.useMutation({
-      onSuccess: (data) => {
+      onSuccess: () => {
         toast({
           title: "Success",
           description: "Attendance updated successfully",
@@ -223,7 +470,7 @@ export default function AttendanceRecordPage() {
     },
   });
 
-  // Stop break time mutation
+  // Stop break time mutation - using the correct mutation
   const stopBreakTime = api.attendanceRecord.stopBreakTime.useMutation({
     onSuccess: () => {
       toast({
@@ -243,8 +490,16 @@ export default function AttendanceRecordPage() {
 
   // Update break time mutation (for real-time updates)
   const updateBreakTime = api.attendanceRecord.updateBreakTime.useMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
       // Silent success - no toast needed for background updates
+      // Update lastSavedBreakTime for the student
+      setStudents((prev) =>
+        prev.map((student) =>
+          student.recordId === data.id
+            ? { ...student, lastSavedBreakTime: data.breakTime }
+            : student,
+        ),
+      );
     },
     onError: (error) => {
       console.error("Failed to update break time:", error);
@@ -259,6 +514,8 @@ export default function AttendanceRecordPage() {
         description: `Status auto-adjusted for ${data.count} students`,
         className: "bg-green-50 border-green-200",
       });
+      // Don't set autoAdjustInProgressRef to false here
+      // It will be set to false in the onSuccess callback of the refetch
       refetch();
     },
     onError: (error) => {
@@ -266,6 +523,8 @@ export default function AttendanceRecordPage() {
         title: "Error",
         description: error.message || "Failed to auto-adjust status",
       });
+      autoAdjustInProgressRef.current = false;
+      studentsBeforeAutoAdjustRef.current = [];
     },
   });
 
@@ -287,6 +546,17 @@ export default function AttendanceRecordPage() {
     },
   });
 
+  // Add a new mutation for updating totalTimeRender
+  const updateTotalTimeRender =
+    api.attendanceRecord.updateTotalTimeRender.useMutation({
+      onSuccess: () => {
+        // Silent success - no toast needed for background updates
+      },
+      onError: (error) => {
+        console.error("Failed to update total time render:", error);
+      },
+    });
+
   // Calculate subject duration and set subject start time when subject data is loaded
   useEffect(() => {
     if (subjectData) {
@@ -305,39 +575,24 @@ export default function AttendanceRecordPage() {
     }
   }, [subjectData]);
 
-  // Initialize students state when data is loaded
-  useEffect(() => {
-    if (studentsData && !studentsLoading) {
-      setStudents(
-        studentsData.map((student) => ({
-          id: student.id,
-          recordId: student.attendanceRecord?.id,
-          firstname: student.firstname,
-          middleName: student.middleName,
-          lastName: student.lastName,
-          image: student.image,
-          status: student.attendanceRecord?.status || "ABSENT",
-          timeStart: student.attendanceRecord?.timeStart || null,
-          timeEnd: student.attendanceRecord?.timeEnd || null,
-          breakTime: student.attendanceRecord?.breakTime || 600, // Default to 10 minutes (600 seconds)
-          paused: student.attendanceRecord?.paused || false, // Get paused state from DB
-          breakStartTime: null, // Will be initialized in the next effect
-        })),
-      );
-      setLoading(false);
-      breakStartTimesInitializedRef.current = false; // Reset flag to initialize break start times
-    }
-  }, [studentsData, studentsLoading]);
-
   // Initialize break start times for students who are on break
   useEffect(() => {
     if (!breakStartTimesInitializedRef.current && students.length > 0) {
       setStudents((prev) =>
         prev.map((student) => {
           if (student.paused && !student.timeEnd) {
+            // If student is paused with no break time, set lastActiveTime to now
+            if ((student.breakTime || 0) <= 0) {
+              return {
+                ...student,
+                breakStartTime: null,
+                lastActiveTime: new Date(),
+              };
+            }
+            // Otherwise, set breakStartTime to now
             return {
               ...student,
-              breakStartTime: new Date(), // Set break start time to now
+              breakStartTime: new Date(),
             };
           }
           return student;
@@ -345,72 +600,6 @@ export default function AttendanceRecordPage() {
       );
       breakStartTimesInitializedRef.current = true;
     }
-  }, [students]);
-
-  // Update current time every second and handle break time countdown
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date());
-
-      // Update break times for students who are on break
-      setStudents((prev) =>
-        prev.map((student) => {
-          if (student.paused && student.breakStartTime && !student.timeEnd) {
-            // Calculate new break time
-            const currentBreakTime = student.breakTime || 600;
-            const newBreakTime = Math.max(0, currentBreakTime - 1); // Reduce by 1 second
-
-            // If break time is depleted, stop the break automatically
-            if (newBreakTime === 0 && student.recordId) {
-              // Call the stopBreakTime mutation when break time reaches 0
-              stopBreakTime.mutate({
-                recordId: student.recordId,
-                elapsedBreakTime: currentBreakTime,
-              });
-
-              // Update local state immediately
-              return {
-                ...student,
-                breakTime: 0,
-                paused: false, // Set paused to false when break time reaches 0
-                breakStartTime: null,
-              };
-            }
-
-            return {
-              ...student,
-              breakTime: newBreakTime,
-            };
-          }
-          return student;
-        }),
-      );
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, []);
-
-  // Set up a separate interval to periodically update the server with current break times
-  useEffect(() => {
-    // Update the server with current break times every 5 seconds
-    const updateServerBreakTimes = () => {
-      students.forEach((student) => {
-        if (
-          student.paused &&
-          student.recordId &&
-          student.breakTime !== undefined
-        ) {
-          updateBreakTime.mutate({
-            recordId: student.recordId,
-            breakTime: student.breakTime ?? 0,
-          });
-        }
-      });
-    };
-
-    const serverUpdateTimer = setInterval(updateServerBreakTimes, 5000);
-
-    return () => clearInterval(serverUpdateTimer);
   }, [students]);
 
   // Handle status change
@@ -464,47 +653,237 @@ export default function AttendanceRecordPage() {
               timeStart: new Date(),
               timeEnd: null,
               breakTime: 600, // Reset to 10 minutes (600 seconds)
+              lastSavedBreakTime: 600, // Also update the last saved break time
               paused: false,
               breakStartTime: null,
+              lastActiveTime: null,
               changed: true,
+              actualTimeRender: 0, // Reset actual time render
             }
           : student,
       ),
     );
   };
 
-  // Handle stop time tracking
-  const handleStopTimeTracking = (recordId: number) => {
-    // Find the student to check if they're on break
-    const student = students.find((s) => s.recordId === recordId);
+  // Update break times and save to database
+  useEffect(() => {
+    // Function to update break times in the database
+    const updateBreakTimes = () => {
+      // Skip if auto-adjust is in progress
+      if (autoAdjustInProgressRef.current) return;
 
-    // If the student is on break, stop the break first
-    if (student?.paused) {
-      handleStopBreakTime(recordId);
-    }
+      students.forEach((student) => {
+        if (
+          student.paused &&
+          student.recordId &&
+          student.breakTime !== undefined &&
+          student.breakTime !== null
+        ) {
+          // Always update if break time is 0 to ensure it's saved to the database
+          if (
+            student.breakTime === 0 ||
+            student.breakTime !== student.lastSavedBreakTime
+          ) {
+            // Update the break time in the database
+            updateBreakTime.mutate({
+              recordId: student.recordId,
+              breakTime: student.breakTime,
+            });
+          }
+        }
+      });
+    };
 
-    stopTimeTracking.mutate({
-      recordId,
-      subjectDuration, // Pass the subject duration to limit the end time
-    });
+    // Set up interval to update break times every 15 seconds
+    const breakUpdateInterval = setInterval(updateBreakTimes, 15000); // Changed to 15 seconds
 
-    // Update local state for immediate UI feedback
-    setStudents((prev) =>
-      prev.map((s) =>
-        s.recordId === recordId
-          ? {
-              ...s,
-              timeEnd: new Date(),
-              paused: false,
-              breakStartTime: null,
-              changed: true,
+    // Clean up
+    return () => clearInterval(breakUpdateInterval);
+  }, [students]);
+
+  // Main timer effect for updating current time, break times, and totalTimeRender
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+      const now = new Date();
+
+      // Skip updates if auto-adjust is in progress
+      if (autoAdjustInProgressRef.current) return;
+
+      // Update students state with new break times and handle time render
+      setStudents((prev) =>
+        prev.map((student) => {
+          // Skip if student has ended time tracking
+          if (student.timeEnd) return student;
+
+          // Calculate actual time render regardless of pause state
+          let actualTimeRender = student.actualTimeRender || 0;
+          if (
+            student.timeStart &&
+            !(student.paused && (student.breakTime || 0) <= 0)
+          ) {
+            const startTime = new Date(student.timeStart).getTime();
+            const currentTime = now.getTime();
+            actualTimeRender = Math.floor((currentTime - startTime) / 1000);
+          }
+
+          // Check if we need to auto-unpause when percentage reaches 100%
+          if (student.timeStart && student.paused) {
+            const percentage = calculatePercentage(
+              student.timeStart,
+              null,
+              student,
+            );
+            if (percentage >= 100) {
+              // Auto-unpause when percentage reaches 100%
+              if (student.recordId) {
+                stopBreakTime.mutate({
+                  recordId: student.recordId,
+                  elapsedBreakTime: 0,
+                });
+              }
+
+              return {
+                ...student,
+                paused: false,
+                breakStartTime: null,
+                lastActiveTime: null,
+                actualTimeRender,
+              };
             }
-          : s,
-      ),
-    );
-  };
+          }
 
-  // Handle start break time
+          // Check if percentage reaches 75% and trigger auto-adjust
+          if (student.timeStart && !student.paused && student.recordId) {
+            const percentage = calculatePercentage(
+              student.timeStart,
+              null,
+              student,
+            );
+            if (
+              percentage >= 75 &&
+              percentage < 76 &&
+              !autoAdjustInProgressRef.current
+            ) {
+              // Trigger auto-adjust when percentage reaches 75%
+              handleAutoAdjustStatus();
+            }
+          }
+
+          // Handle students on break
+          if (student.paused && student.breakStartTime && !student.timeEnd) {
+            // Calculate new break time
+            const currentBreakTime = student.breakTime || 600;
+            const newBreakTime = Math.max(0, currentBreakTime - 1); // Reduce by 1 second
+
+            // If break time is depleted, set lastActiveTime and remove breakStartTime
+            if (newBreakTime === 0) {
+              // Save the break time of 0 to the database immediately
+              if (student.recordId) {
+                updateBreakTime.mutate({
+                  recordId: student.recordId,
+                  breakTime: 0,
+                });
+              }
+
+              return {
+                ...student,
+                breakTime: 0,
+                breakStartTime: null,
+                lastActiveTime: now,
+                lastSavedBreakTime: 0, // Update lastSavedBreakTime to match
+                // Keep paused as true when break time reaches 0
+                actualTimeRender,
+              };
+            }
+
+            return {
+              ...student,
+              breakTime: newBreakTime,
+              actualTimeRender,
+            };
+          }
+
+          // Update totalTimeRender for active students based on shouldUpdateTimeRender logic
+          if (
+            student.recordId &&
+            student.timeStart &&
+            !student.timeEnd &&
+            shouldUpdateTimeRender(student)
+          ) {
+            // Calculate current total time in seconds
+            const startTime = new Date(student.timeStart).getTime();
+            const currentTime = now.getTime();
+            const totalTimeSeconds = Math.floor(
+              (currentTime - startTime) / 1000,
+            );
+
+            // Update totalTimeRender in local state every second
+            return {
+              ...student,
+              totalTimeRender: totalTimeSeconds,
+              actualTimeRender,
+            };
+          }
+
+          return {
+            ...student,
+            actualTimeRender,
+          };
+        }),
+      );
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [students]);
+
+  // Effect to save totalTimeRender to the database every second
+  useEffect(() => {
+    const saveTimer = setInterval(() => {
+      // Skip if auto-adjust is in progress
+      if (autoAdjustInProgressRef.current) return;
+
+      students.forEach((student) => {
+        if (
+          student.recordId &&
+          student.timeStart &&
+          !student.timeEnd &&
+          student.totalTimeRender !== undefined &&
+          student.totalTimeRender !== null &&
+          shouldUpdateTimeRender(student)
+        ) {
+          // Update the totalTimeRender in the database
+          updateTotalTimeRender.mutate({
+            recordId: student.recordId,
+            totalTimeRender: student.totalTimeRender,
+          });
+        }
+      });
+    }, 1000); // Update every second
+
+    return () => clearInterval(saveTimer);
+  }, [students]);
+
+  // Add a visibility change event listener to handle browser tab switching
+  useEffect(() => {
+    // Function to handle visibility change
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        // When tab becomes visible again, refresh the data to get current break times
+        refetch();
+      }
+    };
+
+    // Add event listener
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    // Clean up
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [refetch]);
+
+  // Modify the handleStartBreakTime function to save the current totalTimeRender
   const handleStartBreakTime = (recordId: number) => {
     // Find the student
     const student = students.find((s) => s.recordId === recordId);
@@ -515,6 +894,19 @@ export default function AttendanceRecordPage() {
         description: "No break time remaining",
       });
       return;
+    }
+
+    // Calculate current total time in seconds
+    if (student.timeStart) {
+      const startTime = new Date(student.timeStart).getTime();
+      const currentTime = new Date().getTime();
+      const totalTimeSeconds = Math.floor((currentTime - startTime) / 1000);
+
+      // Update the totalTimeRender before pausing
+      updateTotalTimeRender.mutate({
+        recordId,
+        totalTimeRender: totalTimeSeconds,
+      });
     }
 
     // Call the API to update the database
@@ -528,6 +920,7 @@ export default function AttendanceRecordPage() {
               ...s,
               paused: true, // Set paused to true
               breakStartTime: new Date(),
+              lastActiveTime: null,
               changed: true,
             }
           : s,
@@ -535,12 +928,49 @@ export default function AttendanceRecordPage() {
     );
   };
 
-  // Handle stop break time
+  // Modify the handleStopBreakTime function to handle the case when break time is 0
   const handleStopBreakTime = (recordId: number) => {
     // Find the student
     const student = students.find((s) => s.recordId === recordId);
 
-    if (!student || !student.paused || !student.breakStartTime) {
+    if (!student || !student.paused) {
+      return;
+    }
+
+    // If break time is already 0, just unpause without calculating elapsed time
+    if ((student.breakTime || 0) <= 0) {
+      stopBreakTime.mutate({
+        recordId,
+        elapsedBreakTime: 0,
+      });
+
+      // Reset the last total time update for this student to force an immediate update
+      setLastTotalTimeUpdate((prev) => ({
+        ...prev,
+        [recordId.toString()]: new Date(0), // Set to epoch time to force update
+      }));
+
+      // Update local state
+      setStudents((prev) =>
+        prev.map((s) =>
+          s.recordId === recordId
+            ? {
+                ...s,
+                paused: false,
+                breakTime: 0,
+                lastSavedBreakTime: 0,
+                breakStartTime: null,
+                lastActiveTime: null,
+                changed: true,
+              }
+            : s,
+        ),
+      );
+      return;
+    }
+
+    // For normal case with remaining break time
+    if (!student.breakStartTime) {
       return;
     }
 
@@ -560,6 +990,12 @@ export default function AttendanceRecordPage() {
     const currentBreakTime = student.breakTime || 600;
     const newBreakTime = Math.max(0, currentBreakTime - elapsedSeconds);
 
+    // Reset the last total time update for this student to force an immediate update
+    setLastTotalTimeUpdate((prev) => ({
+      ...prev,
+      [recordId.toString()]: new Date(0), // Set to epoch time to force update
+    }));
+
     // Update local state
     setStudents((prev) =>
       prev.map((s) =>
@@ -568,7 +1004,56 @@ export default function AttendanceRecordPage() {
               ...s,
               paused: false,
               breakTime: newBreakTime,
+              lastSavedBreakTime: newBreakTime,
               breakStartTime: null,
+              lastActiveTime: null,
+              changed: true,
+            }
+          : s,
+      ),
+    );
+  };
+
+  // Modify the handleStopTimeTracking function to save the final totalTimeRender
+  const handleStopTimeTracking = (recordId: number) => {
+    // Find the student to check if they're on break
+    const student = students.find((s) => s.recordId === recordId);
+
+    if (!student) return;
+
+    // Calculate final total time in seconds
+    if (student.timeStart) {
+      const startTime = new Date(student.timeStart).getTime();
+      const currentTime = new Date().getTime();
+      const totalTimeSeconds = Math.floor((currentTime - startTime) / 1000);
+
+      // Update the totalTimeRender before stopping
+      updateTotalTimeRender.mutate({
+        recordId,
+        totalTimeRender: totalTimeSeconds,
+      });
+    }
+
+    // If the student is on break, stop the break first
+    if (student.paused) {
+      handleStopBreakTime(recordId);
+    }
+
+    stopTimeTracking.mutate({
+      recordId,
+      subjectDuration, // Pass the subject duration to limit the end time
+    });
+
+    // Update local state for immediate UI feedback
+    setStudents((prev) =>
+      prev.map((s) =>
+        s.recordId === recordId
+          ? {
+              ...s,
+              timeEnd: new Date(),
+              paused: false,
+              breakStartTime: null,
+              lastActiveTime: null,
               changed: true,
             }
           : s,
@@ -586,6 +1071,12 @@ export default function AttendanceRecordPage() {
       return;
     }
 
+    // Store the current state of students before auto-adjust
+    studentsBeforeAutoAdjustRef.current = [...students];
+
+    // Set auto-adjust in progress flag
+    autoAdjustInProgressRef.current = true;
+
     // Get all records that have time tracking data
     const recordsWithTimeData = students
       .filter((student) => student.recordId && student.timeStart)
@@ -601,6 +1092,8 @@ export default function AttendanceRecordPage() {
         title: "Info",
         description: "No time tracking data available to adjust status",
       });
+      autoAdjustInProgressRef.current = false;
+      studentsBeforeAutoAdjustRef.current = [];
       return;
     }
 
@@ -623,39 +1116,37 @@ export default function AttendanceRecordPage() {
   };
 
   // Calculate duration between two times
-  const calculateDuration = (
-    start: Date | null | undefined,
-    end: Date | null | undefined,
-  ) => {
-    if (!start) return "00:00:00";
-
-    const startTime = new Date(start).getTime();
-    let endTime = end ? new Date(end).getTime() : currentTime.getTime();
-
-    // Always apply the subject duration limit
-    if (subjectDuration > 0) {
-      const maxEndTime = startTime + subjectDuration * 60 * 1000;
-      endTime = Math.min(endTime, maxEndTime);
-    }
-
-    // Calculate duration
-    const durationMs = endTime - startTime;
-    const seconds = Math.floor((durationMs / 1000) % 60);
-    const minutes = Math.floor((durationMs / (1000 * 60)) % 60);
-    const hours = Math.floor(durationMs / (1000 * 60 * 60));
-
-    return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
-  };
-
-  // Calculate duration in minutes
   const calculateDurationMinutes = (
     start: Date | null | undefined,
     end: Date | null | undefined,
+    studentObj?: StudentAttendance,
   ) => {
     if (!start) return 0;
 
     const startTime = new Date(start).getTime();
-    let endTime = end ? new Date(end).getTime() : currentTime.getTime();
+    let endTime;
+
+    // If end time is provided, use it
+    if (end) {
+      endTime = new Date(end).getTime();
+    }
+    // If student is paused with no break time, use lastActiveTime or don't update
+    else if (
+      studentObj &&
+      studentObj.paused &&
+      (studentObj.breakTime || 0) <= 0
+    ) {
+      if (studentObj.lastActiveTime) {
+        endTime = new Date(studentObj.lastActiveTime).getTime();
+      } else {
+        // If no lastActiveTime is available, use current time but this shouldn't happen
+        endTime = currentTime.getTime();
+      }
+    }
+    // Otherwise use current time
+    else {
+      endTime = currentTime.getTime();
+    }
 
     // Always apply the subject duration limit
     if (subjectDuration > 0) {
@@ -672,10 +1163,11 @@ export default function AttendanceRecordPage() {
   const calculatePercentage = (
     start: Date | null | undefined,
     end: Date | null | undefined,
+    studentObj?: StudentAttendance,
   ) => {
     if (!start || subjectDuration <= 0) return 0;
 
-    const durationMinutes = calculateDurationMinutes(start, end);
+    const durationMinutes = calculateDurationMinutes(start, end, studentObj);
     const percentage = (durationMinutes / subjectDuration) * 100;
 
     // Cap at 100%
@@ -713,6 +1205,33 @@ export default function AttendanceRecordPage() {
   const hasNoBreakTimeLeft = (breakTime: number | null | undefined) => {
     return (breakTime || 0) <= 0;
   };
+
+  // Auto-adjust effect that runs every 15 seconds
+  useEffect(() => {
+    const autoAdjustTimer = setInterval(() => {
+      if (
+        subjectData?.active &&
+        attendanceId &&
+        subjectId &&
+        !autoAdjustInProgressRef.current
+      ) {
+        // Store the current state of students before auto-adjust
+        studentsBeforeAutoAdjustRef.current = [...students];
+
+        // Only run auto-adjust if the subject is active and no auto-adjust is in progress
+        autoAdjustInProgressRef.current = true;
+        autoAdjustStatus.mutate({
+          attendanceId,
+          subjectId,
+          subjectStartTime:
+            subjectStartTime || new Date(subjectData!.startTime!),
+          minPercentage: 75, // 75% attendance required
+        });
+      }
+    }, 15000); // Run every 15 seconds
+
+    return () => clearInterval(autoAdjustTimer);
+  }, [subjectData, attendanceId, subjectId, subjectStartTime, students]);
 
   if (loading || attendanceLoading || subjectLoading || studentsLoading) {
     return <Loader />;
@@ -776,9 +1295,14 @@ export default function AttendanceRecordPage() {
                   size="sm"
                   onClick={handleAutoAdjustStatus}
                   className="flex items-center gap-1"
+                  disabled={autoAdjustInProgressRef.current}
                 >
-                  <RefreshCw className="h-4 w-4" />
-                  Auto-Adjust Status
+                  <RefreshCw
+                    className={`h-4 w-4 ${autoAdjustInProgressRef.current ? "animate-spin" : ""}`}
+                  />
+                  {autoAdjustInProgressRef.current
+                    ? "Adjusting..."
+                    : "Auto-Adjust Status"}
                 </Button>
                 <Button
                   className={`${subjectData?.active ? "bg-green-500 hover:bg-green-600" : "bg-gray-300 hover:bg-green-500"}`}
@@ -817,6 +1341,7 @@ export default function AttendanceRecordPage() {
                       <TableHead className="w-[120px]">Time Start</TableHead>
                       <TableHead className="w-[120px]">Time End</TableHead>
                       <TableHead className="w-[120px]">Time Render</TableHead>
+                      <TableHead className="w-[120px]">Actual Time</TableHead>
                       <TableHead className="w-[100px]">Break Left</TableHead>
                       <TableHead className="w-[120px]">Percentage</TableHead>
                       <TableHead className="w-[220px]">Actions</TableHead>
@@ -826,7 +1351,7 @@ export default function AttendanceRecordPage() {
                     <AnimatePresence>
                       {students.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={8} className="h-24 text-center">
+                          <TableCell colSpan={9} className="h-24 text-center">
                             No students found.
                           </TableCell>
                         </TableRow>
@@ -835,17 +1360,22 @@ export default function AttendanceRecordPage() {
                         const percentage = calculatePercentage(
                           student.timeStart,
                           student.timeEnd,
+                          student,
                         );
                         const percentageColor = getPercentageColor(percentage);
                         const isActive = student.timeStart && !student.timeEnd;
                         const hasReachedLimit =
                           isActive &&
-                          calculateDurationMinutes(student.timeStart, null) >=
-                            subjectDuration;
+                          calculateDurationMinutes(
+                            student.timeStart,
+                            null,
+                            student,
+                          ) >= subjectDuration;
                         const isOnBreak = student.paused;
                         const hasNoBreakTime = hasNoBreakTimeLeft(
                           student.breakTime,
                         );
+                        const isCountingTime = shouldUpdateTimeRender(student);
 
                         return (
                           <motion.tr
@@ -883,7 +1413,10 @@ export default function AttendanceRecordPage() {
                                   )}
                                   {isOnBreak && (
                                     <div className="text-xs font-medium text-blue-600">
-                                      On Break
+                                      On Break{" "}
+                                      {isCountingTime
+                                        ? "(Counting)"
+                                        : "(Paused)"}
                                     </div>
                                   )}
                                 </div>
@@ -938,13 +1471,29 @@ export default function AttendanceRecordPage() {
                             <TableCell>{formatTime(student.timeEnd)}</TableCell>
                             <TableCell>
                               <div
-                                className={`font-mono ${isActive && !isOnBreak ? "font-medium text-green-600" : ""}`}
+                                className={`font-mono ${isActive && isCountingTime ? "font-medium text-green-600" : ""}`}
                               >
                                 {calculateDuration(
                                   student.timeStart,
                                   student.timeEnd,
+                                  student,
+                                  currentTime,
+                                  subjectDuration,
                                 )}
                               </div>
+                            </TableCell>
+                            <TableCell>
+                              {student.paused && student.timeStart && (
+                                <div className="font-mono text-blue-600">
+                                  {calculateActualDuration(
+                                    student.timeStart,
+                                    student.timeEnd,
+                                    student,
+                                    currentTime,
+                                    subjectDuration,
+                                  )}
+                                </div>
+                              )}
                             </TableCell>
                             <TableCell>
                               <div
