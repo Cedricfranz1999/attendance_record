@@ -163,7 +163,7 @@ export const SubjectsRouter = createTRPCRouter({
           await Promise.all(
             standbyStudents.map(async (standbyStudent) => {
               console.log(
-                "Creating new record for standby student:",
+                "Creating new record for standby students:",
                 standbyStudent.studentId,
               );
 
