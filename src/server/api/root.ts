@@ -9,6 +9,7 @@ import { AttendanceOverview } from "./routers/attendanceOverview";
 import { DashboardRouter } from "./routers/dashboard";
 import { authRouter } from "./routers/auth";
 import { cronForAttendanceRouter } from "./routers/cronForAttendance";
+import { StandbyStudentsRouter } from "./routers/standyByStudents";
 
 /**
  * This is the primary router for your server.
@@ -26,6 +27,7 @@ export const appRouter = createTRPCRouter({
   dashboard: DashboardRouter,
   auth: authRouter,
   cronforAttendance: cronForAttendanceRouter,
+  standbyStudents: StandbyStudentsRouter,
 });
 
 // export type definition of API

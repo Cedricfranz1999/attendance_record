@@ -281,7 +281,7 @@ const AttendancePage = () => {
         const exportRows = attendanceData.data.map((record) => ({
           Date: format(new Date(record.attendance.date), "yyyy-MM-dd"),
           Student: `${record.student.firstname} ${record.student.lastName}`,
-          Subject: record.subject.name,
+          Subject: record?.subject?.name,
           Status: getStatusText(record.status),
           "Time In": record.timeStart ? formatTime(record.timeStart) : "-",
           "Time Out": record.timeEnd ? formatTime(record.timeEnd) : "-",
@@ -650,7 +650,7 @@ const AttendancePage = () => {
                                   </span>
                                 </div>
                               </TableCell>
-                              <TableCell>{record.subject.name}</TableCell>
+                              <TableCell>{record?.subject?.name}</TableCell>
                               <TableCell>
                                 {getStatusBadge(record.status)}
                               </TableCell>
@@ -766,7 +766,7 @@ const AttendancePage = () => {
                         {record.student.firstname} {record.student.lastName}
                       </td>
                       <td className="border border-gray-300 p-2">
-                        {record.subject.name}
+                        {record?.subject?.name}
                       </td>
                       <td className="border border-gray-300 p-2">
                         {getStatusText(record.status)}

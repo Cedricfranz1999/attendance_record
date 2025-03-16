@@ -1,35 +1,274 @@
 import { z } from "zod";
 import { createTRPCRouter, publicProcedure } from "../trpc";
+import { AttendanceStatus } from "@prisma/client";
 
 export const SubjectsRouter = createTRPCRouter({
+  deactivateAllSubjects: publicProcedure.mutation(async ({ ctx }) => {
+    // Deactivate all subjects
+    const result = await ctx.db.subject.updateMany({
+      data: {
+        active: false,
+      },
+    });
+
+    return {
+      message: "All subjects deactivated successfully",
+      count: result.count,
+    };
+  }),
   toggleSubjectActive: publicProcedure
     .input(z.object({ subjectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      // First, deactivate all subjects
-      await ctx.db.subject.updateMany({
-        data: {
-          active: false,
-        },
-      });
+      try {
+        console.log("Starting toggleSubjectActive procedure...");
 
-      // Get the current subject
-      const subject = await ctx.db.subject.findUnique({
-        where: { id: input.subjectId },
-      });
+        // Get the new subject to activate
+        console.log("Fetching new subject...");
+        const newSubject = await ctx.db.subject.findUnique({
+          where: { id: input.subjectId },
+        });
 
-      if (!subject) {
-        throw new Error("Subject not found");
+        if (!newSubject) {
+          throw new Error("Subject not found");
+        }
+        console.log("New subject found:", newSubject);
+
+        // Get the currently active subject (if any)
+        console.log("Fetching currently active subject...");
+        const activeSubject = await ctx.db.subject.findFirst({
+          where: { active: true },
+        });
+        console.log("Active subject:", activeSubject);
+
+        // Get the latest attendance record
+        console.log("Fetching latest attendance record...");
+        const latestAttendance = await ctx.db.attendance.findFirst({
+          orderBy: { date: "desc" }, // Get the most recent attendance by date
+        });
+
+        if (!latestAttendance) {
+          throw new Error("No attendance record found");
+        }
+        console.log("Latest attendance record found:", latestAttendance);
+
+        const latestAttendanceId = latestAttendance.id;
+        console.log("Latest attendance ID:", latestAttendanceId);
+
+        // Get ALL students
+        console.log("Fetching all students...");
+        const allStudents = await ctx.db.students.findMany();
+        console.log(`Found ${allStudents.length} students`);
+
+        if (activeSubject) {
+          // If there is an active subject, get its attendance records
+          console.log("Fetching attendance records for active subject...");
+          const attendanceRecords = await ctx.db.attendanceRecord.findMany({
+            where: {
+              subjectId: activeSubject.id,
+              attendanceId: latestAttendanceId, // Make sure we're using records from the latest attendance
+            },
+          });
+          console.log("Attendance records found:", attendanceRecords);
+
+          // Update the past subject's attendance records to add timeEnd and set paused to false
+          // But only for PRESENT and LATE statuses
+          console.log("Updating past subject's attendance records...");
+          await Promise.all(
+            attendanceRecords.map(async (record) => {
+              // Only update timeEnd for PRESENT and LATE statuses
+              const updateData: any = { paused: false };
+
+              if (
+                record.status === AttendanceStatus.PRESENT ||
+                record.status === AttendanceStatus.LATE
+              ) {
+                updateData.timeEnd = activeSubject.endTime;
+              }
+
+              console.log(
+                "Updating record for student:",
+                record.studentId,
+                "with data:",
+                updateData,
+              );
+
+              await ctx.db.attendanceRecord.update({
+                where: { id: record.id },
+                data: updateData,
+              });
+              console.log("Record updated for student:", record.studentId);
+            }),
+          );
+
+          // Create a map of student IDs to their status from the previous subject
+          const studentStatusMap = new Map();
+          attendanceRecords.forEach((record) => {
+            studentStatusMap.set(record.studentId, record.status);
+          });
+
+          // Create new attendance records for ALL students for the new subject
+          console.log(
+            "Creating new attendance records for ALL students for the new subject...",
+          );
+          await Promise.all(
+            allStudents.map(async (student) => {
+              // Get the status from the previous subject, or default to ABSENT
+              const status =
+                studentStatusMap.get(student.id) || AttendanceStatus.ABSENT;
+
+              console.log(
+                "Creating new record for student:",
+                student.id,
+                "with status:",
+                status,
+              );
+
+              // Only set timeStart for PRESENT or LATE status
+              const timeStart =
+                status === AttendanceStatus.PRESENT ||
+                status === AttendanceStatus.LATE
+                  ? newSubject.startTime
+                  : null;
+
+              await ctx.db.attendanceRecord.create({
+                data: {
+                  attendanceId: latestAttendanceId,
+                  studentId: student.id,
+                  subjectId: input.subjectId,
+                  status: status, // Inherit status from previous subject or default to ABSENT
+                  timeStart: timeStart, // Only set timeStart for PRESENT or LATE
+                  timeEnd: null, // timeEnd is not set initially
+                  breakTime: 600, // Default breakTime
+                  totalTimeRender: 0, // Default totalTimeRender
+                  paused: false, // Set paused to false
+                },
+              });
+              console.log("New record created for student:", student.id);
+            }),
+          );
+        } else {
+          // If no subject is active, check for standby students first
+          console.log("No active subject found. Fetching standby students...");
+          const standbyStudents = await ctx.db.standbyStudents.findMany({
+            include: { student: true },
+          });
+          console.log("Standby students found:", standbyStudents);
+
+          // Create a map of standby student IDs
+          const standbyStudentIds = new Set(
+            standbyStudents.map((s) => s.studentId),
+          );
+
+          // Process standby students
+          await Promise.all(
+            standbyStudents.map(async (standbyStudent) => {
+              console.log(
+                "Creating new record for standby student:",
+                standbyStudent.studentId,
+              );
+
+              // Convert string status to enum value
+              let statusValue: AttendanceStatus = AttendanceStatus.PRESENT; // Default
+
+              if (standbyStudent.status) {
+                // Check if the string status matches any of the enum values
+                if (
+                  Object.values(AttendanceStatus).includes(
+                    standbyStudent.status as any,
+                  )
+                ) {
+                  statusValue = standbyStudent.status as AttendanceStatus;
+                }
+              }
+
+              await ctx.db.attendanceRecord.create({
+                data: {
+                  attendanceId: latestAttendanceId,
+                  studentId: standbyStudent.studentId,
+                  subjectId: input.subjectId,
+                  status: statusValue, // Use the converted enum value
+                  timeStart: standbyStudent.startTime, // Use the standby student's startTime
+                  timeEnd: null, // timeEnd is not set initially
+                  breakTime: 600, // Default breakTime
+                  totalTimeRender: 0, // Default totalTimeRender
+                  paused: false, // Set paused to false
+                },
+              });
+              console.log(
+                "New record created for standby student:",
+                standbyStudent.studentId,
+              );
+
+              // Delete the standby student record
+              console.log(
+                "Deleting standby student record:",
+                standbyStudent.id,
+              );
+              await ctx.db.standbyStudents.delete({
+                where: { id: standbyStudent.id },
+              });
+              console.log("Standby student record deleted:", standbyStudent.id);
+            }),
+          );
+
+          // Create records for all other students (not standby) with ABSENT status
+          console.log(
+            "Creating records for all other students with ABSENT status...",
+          );
+          await Promise.all(
+            allStudents
+              .filter((student) => !standbyStudentIds.has(student.id))
+              .map(async (student) => {
+                console.log(
+                  "Creating new record for non-standby student:",
+                  student.id,
+                );
+
+                await ctx.db.attendanceRecord.create({
+                  data: {
+                    attendanceId: latestAttendanceId,
+                    studentId: student.id,
+                    subjectId: input.subjectId,
+                    status: AttendanceStatus.ABSENT, // Default to ABSENT for non-standby students
+                    timeStart: null, // No timeStart for ABSENT
+                    timeEnd: null, // timeEnd is not set initially
+                    breakTime: 600, // Default breakTime
+                    totalTimeRender: 0, // Default totalTimeRender
+                    paused: false, // Set paused to false
+                  },
+                });
+                console.log(
+                  "New record created for non-standby student:",
+                  student.id,
+                );
+              }),
+          );
+        }
+
+        // Deactivate all subjects
+        console.log("Deactivating all subjects...");
+        await ctx.db.subject.updateMany({
+          data: {
+            active: false,
+          },
+        });
+        console.log("All subjects deactivated.");
+
+        // Activate the new subject
+        console.log("Activating new subject...");
+        const updatedSubject = await ctx.db.subject.update({
+          where: { id: input.subjectId },
+          data: {
+            active: true,
+          },
+        });
+        console.log("New subject activated:", updatedSubject);
+
+        return updatedSubject;
+      } catch (error) {
+        console.error("Error in toggleSubjectActive:", error);
+        throw new Error("Failed to toggle subject active status");
       }
-
-      // Toggle the active status of the current subject (always set to true since we deactivated all)
-      const updatedSubject = await ctx.db.subject.update({
-        where: { id: input.subjectId },
-        data: {
-          active: true, // Always set to true since we want to activate this one
-        },
-      });
-
-      return updatedSubject;
     }),
   getSubjects: publicProcedure
     .input(

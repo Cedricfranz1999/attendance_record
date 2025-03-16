@@ -1,10 +1,9 @@
+import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-export async function POST(request: {
-  json: () => PromiseLike<{ date: string }> | { date: string };
-}) {
+export async function POST(request: Request) {
   try {
     console.log("Creating attendance..."); // Debug log
     const { date } = await request.json();
@@ -15,22 +14,12 @@ export async function POST(request: {
 
     console.log("Attendance created:", attendance); // Debug log
 
-    return new Response(JSON.stringify(attendance), {
-      status: 201,
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
+    return NextResponse.json(attendance, { status: 201 });
   } catch (error) {
     console.error("Error creating attendance:", error); // Debug log
-    return new Response(
-      JSON.stringify({ error: "Failed to create attendance" }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-        },
-      },
+    return NextResponse.json(
+      { error: "Failed to create attendance" },
+      { status: 500 },
     );
   }
 }

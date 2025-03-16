@@ -3,7 +3,7 @@
 import { useParams } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
 import { useToast } from "@/components/ui/use-toast";
-import { api, RouterOutputs } from "@/trpc/react";
+import { api, type RouterOutputs } from "@/trpc/react";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -19,6 +19,7 @@ import {
   CardHeader,
   CardTitle,
   CardDescription,
+  CardFooter,
 } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -55,6 +56,9 @@ const attendanceStatusOptions = [
   { value: "LATE", label: "Late", color: "bg-amber-100 text-amber-800" },
   { value: "EXCUSED", label: "Excused", color: "bg-blue-100 text-blue-800" },
 ];
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Label } from "@/components/ui/label";
+import StandbyStudents from "@/app/_components/standbyStudents";
 
 // Type for student attendance record
 type StudentAttendance = {
@@ -111,7 +115,9 @@ const formatDuration = (totalSeconds: number) => {
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
-  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+  return `${hours.toString().padStart(2, "0")}:${minutes
+    .toString()
+    .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 };
 
 // Calculate duration between two times
@@ -173,7 +179,9 @@ const calculateDuration = (
   const minutes = Math.floor((durationMs / (1000 * 60)) % 60);
   const hours = Math.floor(durationMs / (1000 * 60 * 60));
 
-  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+  return `${hours.toString().padStart(2, "0")}:${minutes
+    .toString()
+    .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 };
 
 // Calculate actual duration regardless of pause state
@@ -230,7 +238,9 @@ const calculateActualDuration = (
   const minutes = Math.floor((durationMs / (1000 * 60)) % 60);
   const hours = Math.floor(durationMs / (1000 * 60 * 60));
 
-  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+  return `${hours.toString().padStart(2, "0")}:${minutes
+    .toString()
+    .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 };
 
 // Check if time render should be updated based on student state
@@ -412,6 +422,25 @@ export default function AttendanceRecordPage() {
         toast({
           title: "Error",
           description: error.message || "Failed to update attendance records",
+        });
+      },
+    });
+
+  // Create and start time tracking in one step
+  const createAndStartTimeTracking =
+    api.attendanceRecord.createAndStartTimeTracking.useMutation({
+      onSuccess: () => {
+        toast({
+          title: "Success",
+          description: "Time tracking started",
+          className: "bg-green-50 border-green-200",
+        });
+        refetch();
+      },
+      onError: (error) => {
+        toast({
+          title: "Error",
+          description: error.message || "Failed to start time tracking",
         });
       },
     });
@@ -641,28 +670,68 @@ export default function AttendanceRecordPage() {
   };
 
   // Handle start time tracking
-  const handleStartTimeTracking = (recordId: number) => {
-    startTimeTracking.mutate({ recordId });
+  const handleStartTimeTracking = (recordId: number, studentId?: number) => {
+    // If recordId is -1, we need to pass studentId, attendanceId, and subjectId
+    if (recordId === -1) {
+      // Find the student to get the studentId if not provided
+      const student = students.find((s) => s.id === studentId);
+      if (student) {
+        startTimeTracking.mutate({
+          recordId: -1,
+          studentId: student.id,
+          attendanceId,
+          subjectId,
+        });
 
-    // Update local state for immediate UI feedback
-    setStudents((prev) =>
-      prev.map((student) =>
-        student.recordId === recordId
-          ? {
-              ...student,
-              timeStart: new Date(),
-              timeEnd: null,
-              breakTime: 600, // Reset to 10 minutes (600 seconds)
-              lastSavedBreakTime: 600, // Also update the last saved break time
-              paused: false,
-              breakStartTime: null,
-              lastActiveTime: null,
-              changed: true,
-              actualTimeRender: 0, // Reset actual time render
-            }
-          : student,
-      ),
-    );
+        // Update local state for immediate UI feedback
+        setStudents((prev) =>
+          prev.map((s) =>
+            s.id === student.id
+              ? {
+                  ...s,
+                  timeStart: new Date(),
+                  timeEnd: null,
+                  breakTime: 600, // Reset to 10 minutes (600 seconds)
+                  lastSavedBreakTime: 600, // Also update the last saved break time
+                  paused: false,
+                  breakStartTime: null,
+                  lastActiveTime: null,
+                  changed: true,
+                  actualTimeRender: 0, // Reset actual time render
+                }
+              : s,
+          ),
+        );
+      } else {
+        toast({
+          title: "Error",
+          description: "Student not found",
+        });
+      }
+    } else {
+      // For existing records, just pass the recordId
+      startTimeTracking.mutate({ recordId });
+
+      // Update local state for immediate UI feedback
+      setStudents((prev) =>
+        prev.map((student) =>
+          student.recordId === recordId
+            ? {
+                ...student,
+                timeStart: new Date(),
+                timeEnd: null,
+                breakTime: 600, // Reset to 10 minutes (600 seconds)
+                lastSavedBreakTime: 600, // Also update the last saved break time
+                paused: false,
+                breakStartTime: null,
+                lastActiveTime: null,
+                changed: true,
+                actualTimeRender: 0, // Reset actual time render
+              }
+            : student,
+        ),
+      );
+    }
   };
 
   // Update break times and save to database
@@ -1224,7 +1293,7 @@ export default function AttendanceRecordPage() {
           attendanceId,
           subjectId,
           subjectStartTime:
-            subjectStartTime || new Date(subjectData!.startTime!),
+            subjectStartTime || new Date(subjectData.startTime || new Date()),
           minPercentage: 75, // 75% attendance required
         });
       }
@@ -1244,443 +1313,487 @@ export default function AttendanceRecordPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <Card className="overflow-hidden">
-          <CardHeader className="bg-primary/5">
-            <div className="flex flex-col space-y-2 md:flex-row md:items-center md:justify-between md:space-y-0">
-              <div>
-                <CardTitle className="text-xl font-bold md:text-2xl">
-                  Attendance Record
-                </CardTitle>
-                <CardDescription>
-                  {attendanceData && (
-                    <div className="mt-1 flex items-center text-sm">
-                      <Calendar className="mr-1 h-4 w-4" />
-                      {formatDate(attendanceData.date)}
-                    </div>
-                  )}
-                  {subjectData && (
-                    <div className="mt-1 flex items-center text-sm">
-                      <Clock className="mr-1 h-4 w-4" />
-                      {subjectData.name}
-                      {subjectData.startTime && subjectData.endTime && (
-                        <span className="ml-1">
-                          (
-                          {new Date(subjectData.startTime).toLocaleTimeString(
-                            [],
-                            {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            },
-                          )}{" "}
-                          -
-                          {new Date(subjectData.endTime).toLocaleTimeString(
-                            [],
-                            { hour: "2-digit", minute: "2-digit" },
-                          )}
-                          )
-                        </span>
+        <Tabs defaultValue="attendance" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="attendance">attendance</TabsTrigger>
+            <TabsTrigger value="standby">standby</TabsTrigger>
+          </TabsList>
+          <TabsContent value="attendance">
+            <Card className="overflow-hidden">
+              <CardHeader className="bg-primary/5">
+                <div className="flex flex-col space-y-2 md:flex-row md:items-center md:justify-between md:space-y-0">
+                  <div>
+                    <CardTitle className="text-xl font-bold md:text-2xl">
+                      Attendance Record
+                    </CardTitle>
+                    <CardDescription>
+                      {attendanceData && (
+                        <div className="mt-1 flex items-center text-sm">
+                          <Calendar className="mr-1 h-4 w-4" />
+                          {formatDate(attendanceData.date)}
+                        </div>
                       )}
-                    </div>
-                  )}
-
-                  <div className="mt-1 flex items-center text-sm">
-                    <Clock className="mr-1 h-4 w-4" />
-                    <span>Duration: {subjectData?.duration} minutes</span>
-                  </div>
-                </CardDescription>
-              </div>
-              <div className="flex flex-col gap-2 md:flex-row">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleAutoAdjustStatus}
-                  className="flex items-center gap-1"
-                  disabled={autoAdjustInProgressRef.current}
-                >
-                  <RefreshCw
-                    className={`h-4 w-4 ${autoAdjustInProgressRef.current ? "animate-spin" : ""}`}
-                  />
-                  {autoAdjustInProgressRef.current
-                    ? "Adjusting..."
-                    : "Auto-Adjust Status"}
-                </Button>
-                <Button
-                  className={`${subjectData?.active ? "bg-green-500 hover:bg-green-600" : "bg-gray-300 hover:bg-green-500"}`}
-                  size="sm"
-                  onClick={handleToggleActive}
-                >
-                  {subjectData?.active ? "Active" : "Inactive"}
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="p-2 md:p-6">
-            <div className="mb-4 flex flex-col space-y-2 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
-              <div className="relative w-full max-w-sm">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  type="text"
-                  placeholder="Search students..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="w-full pl-8"
-                />
-              </div>
-              <div className="text-sm text-muted-foreground">
-                {students.length} students
-              </div>
-            </div>
-
-            <div className="overflow-hidden rounded-md border">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Student</TableHead>
-                      <TableHead className="w-[150px]">Status</TableHead>
-                      <TableHead className="w-[120px]">Time Start</TableHead>
-                      <TableHead className="w-[120px]">Time End</TableHead>
-                      <TableHead className="w-[120px]">Time Render</TableHead>
-                      <TableHead className="w-[120px]">Actual Time</TableHead>
-                      <TableHead className="w-[100px]">Break Left</TableHead>
-                      <TableHead className="w-[120px]">Percentage</TableHead>
-                      <TableHead className="w-[220px]">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    <AnimatePresence>
-                      {students.length === 0 && (
-                        <TableRow>
-                          <TableCell colSpan={9} className="h-24 text-center">
-                            No students found.
-                          </TableCell>
-                        </TableRow>
-                      )}
-                      {students.map((student) => {
-                        const percentage = calculatePercentage(
-                          student.timeStart,
-                          student.timeEnd,
-                          student,
-                        );
-                        const percentageColor = getPercentageColor(percentage);
-                        const isActive = student.timeStart && !student.timeEnd;
-                        const hasReachedLimit =
-                          isActive &&
-                          calculateDurationMinutes(
-                            student.timeStart,
-                            null,
-                            student,
-                          ) >= subjectDuration;
-                        const isOnBreak = student.paused;
-                        const hasNoBreakTime = hasNoBreakTimeLeft(
-                          student.breakTime,
-                        );
-                        const isCountingTime = shouldUpdateTimeRender(student);
-
-                        return (
-                          <motion.tr
-                            key={student.id}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            transition={{ duration: 0.3 }}
-                            className={`border-b transition-colors hover:bg-muted/50 ${
-                              student.changed ? "bg-primary/5" : ""
-                            } ${isOnBreak ? "bg-blue-50" : ""}`}
-                          >
-                            <TableCell>
-                              <div className="flex items-center gap-3">
-                                <Avatar className="h-10 w-10 border">
-                                  <AvatarImage
-                                    src={student.image}
-                                    alt={student.firstname}
-                                  />
-                                  <AvatarFallback className="bg-primary/10">
-                                    {getInitials(
-                                      student.firstname,
-                                      student.lastName,
-                                    )}
-                                  </AvatarFallback>
-                                </Avatar>
-                                <div>
-                                  <div className="font-medium">
-                                    {getFullName(student)}
-                                  </div>
-                                  {student.changed && (
-                                    <div className="text-xs text-muted-foreground">
-                                      Modified
-                                    </div>
-                                  )}
-                                  {isOnBreak && (
-                                    <div className="text-xs font-medium text-blue-600">
-                                      On Break{" "}
-                                      {isCountingTime
-                                        ? "(Counting)"
-                                        : "(Paused)"}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2">
-                                <div
-                                  className={`rounded-full px-2 py-1 text-xs font-medium ${getStatusColor(
-                                    student.status,
-                                  )}`}
-                                >
-                                  {
-                                    attendanceStatusOptions.find(
-                                      (option) =>
-                                        option.value === student.status,
-                                    )?.label
-                                  }
-                                </div>
-                                <Select
-                                  value={student.status}
-                                  onValueChange={(value) =>
-                                    handleStatusChange(
-                                      student.id,
-                                      value as
-                                        | "PRESENT"
-                                        | "ABSENT"
-                                        | "LATE"
-                                        | "EXCUSED",
-                                    )
-                                  }
-                                >
-                                  <SelectTrigger className="h-8 w-[130px]">
-                                    <SelectValue placeholder="Change status" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {attendanceStatusOptions.map((option) => (
-                                      <SelectItem
-                                        key={option.value}
-                                        value={option.value}
-                                      >
-                                        {option.label}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              {formatTime(student.timeStart)}
-                            </TableCell>
-                            <TableCell>{formatTime(student.timeEnd)}</TableCell>
-                            <TableCell>
-                              <div
-                                className={`font-mono ${isActive && isCountingTime ? "font-medium text-green-600" : ""}`}
-                              >
-                                {calculateDuration(
-                                  student.timeStart,
-                                  student.timeEnd,
-                                  student,
-                                  currentTime,
-                                  subjectDuration,
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              {student.paused && student.timeStart && (
-                                <div className="font-mono text-blue-600">
-                                  {calculateActualDuration(
-                                    student.timeStart,
-                                    student.timeEnd,
-                                    student,
-                                    currentTime,
-                                    subjectDuration,
-                                  )}
-                                </div>
+                      {subjectData && (
+                        <div className="mt-1 flex items-center text-sm">
+                          <Clock className="mr-1 h-4 w-4" />
+                          {subjectData.name}
+                          {subjectData.startTime && subjectData.endTime && (
+                            <span className="ml-1">
+                              (
+                              {new Date(
+                                subjectData.startTime,
+                              ).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}{" "}
+                              -
+                              {new Date(subjectData.endTime).toLocaleTimeString(
+                                [],
+                                { hour: "2-digit", minute: "2-digit" },
                               )}
-                            </TableCell>
-                            <TableCell>
-                              <div
-                                className={`font-mono ${hasNoBreakTime ? "text-red-600" : isOnBreak ? "font-medium text-blue-600" : ""}`}
+                              )
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="mt-1 flex items-center text-sm">
+                        <Clock className="mr-1 h-4 w-4" />
+                        <span>Duration: {subjectData?.duration} minutes</span>
+                      </div>
+                    </CardDescription>
+                  </div>
+                  <div className="flex flex-col gap-2 md:flex-row">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAutoAdjustStatus}
+                      className="flex items-center gap-1"
+                      disabled={autoAdjustInProgressRef.current}
+                    >
+                      <RefreshCw
+                        className={`h-4 w-4 ${autoAdjustInProgressRef.current ? "animate-spin" : ""}`}
+                      />
+                      {autoAdjustInProgressRef.current
+                        ? "Adjusting..."
+                        : "Auto-Adjust Status"}
+                    </Button>
+                    <Button
+                      className={`${subjectData?.active ? "bg-green-500 hover:bg-green-600" : "bg-gray-300 hover:bg-green-500"}`}
+                      size="sm"
+                      onClick={handleToggleActive}
+                    >
+                      {subjectData?.active ? "Active" : "Inactive"}
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-2 md:p-6">
+                <div className="mb-4 flex flex-col space-y-2 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
+                  <div className="relative w-full max-w-sm">
+                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      type="text"
+                      placeholder="Search students..."
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="w-full pl-8"
+                    />
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {students.length} students
+                  </div>
+                </div>
+
+                <div className="overflow-hidden rounded-md border">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Student</TableHead>
+                          <TableHead className="w-[150px]">Status</TableHead>
+                          <TableHead className="w-[120px]">
+                            Time Start
+                          </TableHead>
+                          <TableHead className="w-[120px]">Time End</TableHead>
+                          <TableHead className="w-[120px]">
+                            Time Render
+                          </TableHead>
+                          <TableHead className="w-[120px]">
+                            Actual Time
+                          </TableHead>
+                          <TableHead className="w-[100px]">
+                            Break Left
+                          </TableHead>
+                          <TableHead className="w-[120px]">
+                            Percentage
+                          </TableHead>
+                          <TableHead className="w-[220px]">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        <AnimatePresence>
+                          {students.length === 0 && (
+                            <TableRow>
+                              <TableCell
+                                colSpan={9}
+                                className="h-24 text-center"
                               >
-                                {formatBreakTime(student.breakTime)}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex flex-col gap-1">
-                                <div
-                                  className={`text-sm font-medium ${percentageColor}`}
-                                >
-                                  {percentage.toFixed(0)}%
-                                </div>
-                                <Progress
-                                  value={percentage}
-                                  className="h-2"
-                                  indicatorClassName={
-                                    percentage >= 100
-                                      ? "bg-green-600"
-                                      : percentage >= 75
-                                        ? "bg-emerald-500"
-                                        : percentage >= 50
-                                          ? "bg-amber-500"
-                                          : percentage >= 25
-                                            ? "bg-orange-500"
-                                            : "bg-red-500"
-                                  }
-                                />
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex flex-wrap gap-2">
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => {
-                                          if (!student.recordId) {
-                                            // Create record first with current status
-                                            updateAttendance.mutate({
-                                              records: [
-                                                {
-                                                  studentId: student.id,
-                                                  attendanceId,
-                                                  subjectId,
-                                                  status:
-                                                    student.status === "EXCUSED"
-                                                      ? "ABSENT"
-                                                      : student.status,
-                                                },
-                                              ],
-                                            });
-                                            // The refetch will update the student.recordId
-                                            // But for immediate feedback, we can simulate the start
-                                            handleStartTimeTracking(
-                                              student.recordId || -1,
-                                            );
-                                          } else {
-                                            handleStartTimeTracking(
-                                              student.recordId,
-                                            );
-                                          }
-                                        }}
-                                        className="h-8 px-2 py-0"
-                                        disabled={
-                                          !!student.timeStart ||
-                                          !subjectData?.active
-                                        }
-                                      >
-                                        <Clock className="mr-1 h-3 w-3" />
-                                        Start
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      {student.timeStart
-                                        ? "Time tracking already started"
-                                        : "Start time tracking"}
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
+                                No students found.
+                              </TableCell>
+                            </TableRow>
+                          )}
+                          {students.map((student) => {
+                            const percentage = calculatePercentage(
+                              student.timeStart,
+                              student.timeEnd,
+                              student,
+                            );
+                            const percentageColor =
+                              getPercentageColor(percentage);
+                            const isActive =
+                              student.timeStart && !student.timeEnd;
+                            const hasReachedLimit =
+                              isActive &&
+                              calculateDurationMinutes(
+                                student.timeStart,
+                                null,
+                                student,
+                              ) >= subjectDuration;
+                            const isOnBreak = student.paused;
+                            const hasNoBreakTime = hasNoBreakTimeLeft(
+                              student.breakTime,
+                            );
+                            const isCountingTime =
+                              shouldUpdateTimeRender(student);
 
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => {
-                                          if (student.recordId) {
-                                            handleStopTimeTracking(
-                                              student.recordId,
-                                            );
-                                          }
-                                        }}
-                                        className="h-8 px-2 py-0"
-                                        disabled={
-                                          !student.recordId ||
-                                          !student.timeStart ||
-                                          !!student.timeEnd
-                                        }
-                                      >
-                                        <Square className="mr-1 h-3 w-3" />
-                                        End
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      {!student.timeStart
-                                        ? "Start time tracking first"
-                                        : student.timeEnd
-                                          ? "Time tracking already ended"
-                                          : hasReachedLimit
-                                            ? "Maximum duration reached"
-                                            : "End time tracking"}
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-
-                                {isActive && student.recordId && (
-                                  <>
-                                    {!isOnBreak ? (
-                                      <TooltipProvider>
-                                        <Tooltip>
-                                          <TooltipTrigger asChild>
-                                            <Button
-                                              variant="outline"
-                                              size="sm"
-                                              onClick={() =>
-                                                handleStartBreakTime(
-                                                  student.recordId!,
-                                                )
-                                              }
-                                              className="h-8 px-2 py-0"
-                                              disabled={hasNoBreakTime}
+                            return (
+                              <motion.tr
+                                key={student.id}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                transition={{ duration: 0.3 }}
+                                className={`border-b transition-colors hover:bg-muted/50 ${
+                                  student.changed ? "bg-primary/5" : ""
+                                } ${isOnBreak ? "bg-blue-50" : ""}`}
+                              >
+                                <TableCell>
+                                  <div className="flex items-center gap-3">
+                                    <Avatar className="h-10 w-10 border">
+                                      <AvatarImage
+                                        src={student.image}
+                                        alt={student.firstname}
+                                      />
+                                      <AvatarFallback className="bg-primary/10">
+                                        {getInitials(
+                                          student.firstname,
+                                          student.lastName,
+                                        )}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div>
+                                      <div className="font-medium">
+                                        {getFullName(student)}
+                                      </div>
+                                      {student.changed && (
+                                        <div className="text-xs text-muted-foreground">
+                                          Modified
+                                        </div>
+                                      )}
+                                      {isOnBreak && (
+                                        <div className="text-xs font-medium text-blue-600">
+                                          On Break{" "}
+                                          {isCountingTime
+                                            ? "(Counting)"
+                                            : "(Paused)"}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    <div
+                                      className={`rounded-full px-2 py-1 text-xs font-medium ${getStatusColor(
+                                        student.status,
+                                      )}`}
+                                    >
+                                      {
+                                        attendanceStatusOptions.find(
+                                          (option) =>
+                                            option.value === student.status,
+                                        )?.label
+                                      }
+                                    </div>
+                                    <Select
+                                      value={student.status}
+                                      onValueChange={(value) =>
+                                        handleStatusChange(
+                                          student.id,
+                                          value as
+                                            | "PRESENT"
+                                            | "ABSENT"
+                                            | "LATE"
+                                            | "EXCUSED",
+                                        )
+                                      }
+                                    >
+                                      <SelectTrigger className="h-8 w-[130px]">
+                                        <SelectValue placeholder="Change status" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {attendanceStatusOptions.map(
+                                          (option) => (
+                                            <SelectItem
+                                              key={option.value}
+                                              value={option.value}
                                             >
-                                              <Pause className="mr-1 h-3 w-3" />
-                                              Pause
-                                            </Button>
-                                          </TooltipTrigger>
-                                          <TooltipContent>
-                                            {hasNoBreakTime
-                                              ? "No break time remaining"
-                                              : "Start break (pause tracking)"}
-                                          </TooltipContent>
-                                        </Tooltip>
-                                      </TooltipProvider>
-                                    ) : (
-                                      <TooltipProvider>
-                                        <Tooltip>
-                                          <TooltipTrigger asChild>
-                                            <Button
-                                              variant="outline"
-                                              size="sm"
-                                              onClick={() =>
-                                                handleStopBreakTime(
-                                                  student.recordId!,
-                                                )
-                                              }
-                                              className="h-8 bg-blue-50 px-2 py-0"
-                                            >
-                                              <Play className="mr-1 h-3 w-3" />
-                                              Resume
-                                            </Button>
-                                          </TooltipTrigger>
-                                          <TooltipContent>
-                                            Stop break and resume tracking
-                                          </TooltipContent>
-                                        </Tooltip>
-                                      </TooltipProvider>
+                                              {option.label}
+                                            </SelectItem>
+                                          ),
+                                        )}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  {formatTime(student.timeStart)}
+                                </TableCell>
+                                <TableCell>
+                                  {formatTime(student.timeEnd)}
+                                </TableCell>
+                                <TableCell>
+                                  <div
+                                    className={`font-mono ${isActive && isCountingTime ? "font-medium text-green-600" : ""}`}
+                                  >
+                                    {calculateDuration(
+                                      student.timeStart,
+                                      student.timeEnd,
+                                      student,
+                                      currentTime,
+                                      subjectDuration,
                                     )}
-                                  </>
-                                )}
-                              </div>
-                            </TableCell>
-                          </motion.tr>
-                        );
-                      })}
-                    </AnimatePresence>
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  {student.paused && student.timeStart && (
+                                    <div className="font-mono text-blue-600">
+                                      {calculateActualDuration(
+                                        student.timeStart,
+                                        student.timeEnd,
+                                        student,
+                                        currentTime,
+                                        subjectDuration,
+                                      )}
+                                    </div>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <div
+                                    className={`font-mono ${hasNoBreakTime ? "text-red-600" : isOnBreak ? "font-medium text-blue-600" : ""}`}
+                                  >
+                                    {formatBreakTime(student.breakTime)}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex flex-col gap-1">
+                                    <div
+                                      className={`text-sm font-medium ${percentageColor}`}
+                                    >
+                                      {percentage.toFixed(0)}%
+                                    </div>
+                                    <Progress
+                                      value={percentage}
+                                      className="h-2"
+                                      indicatorClassName={
+                                        percentage >= 100
+                                          ? "bg-green-600"
+                                          : percentage >= 75
+                                            ? "bg-emerald-500"
+                                            : percentage >= 50
+                                              ? "bg-amber-500"
+                                              : percentage >= 25
+                                                ? "bg-orange-500"
+                                                : "bg-red-500"
+                                      }
+                                    />
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex flex-wrap gap-2">
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => {
+                                              if (!student.recordId) {
+                                                // Use the new combined mutation for one-click operation
+                                                createAndStartTimeTracking.mutate(
+                                                  {
+                                                    studentId: student.id,
+                                                    attendanceId,
+                                                    subjectId,
+                                                    status:
+                                                      student.status ===
+                                                      "EXCUSED"
+                                                        ? "ABSENT"
+                                                        : student.status,
+                                                  },
+                                                );
+
+                                                // Update local state for immediate UI feedback
+                                                setStudents((prev) =>
+                                                  prev.map((s) =>
+                                                    s.id === student.id
+                                                      ? {
+                                                          ...s,
+                                                          timeStart: new Date(),
+                                                          timeEnd: null,
+                                                          breakTime: 600,
+                                                          lastSavedBreakTime: 600,
+                                                          paused: false,
+                                                          breakStartTime: null,
+                                                          lastActiveTime: null,
+                                                          changed: true,
+                                                          actualTimeRender: 0,
+                                                        }
+                                                      : s,
+                                                  ),
+                                                );
+                                              } else {
+                                                handleStartTimeTracking(
+                                                  student.recordId,
+                                                );
+                                              }
+                                            }}
+                                            className="h-8 px-2 py-0"
+                                            disabled={
+                                              !!student.timeStart ||
+                                              !subjectData?.active
+                                            }
+                                          >
+                                            <Clock className="mr-1 h-3 w-3" />
+                                            Start
+                                          </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          {student.timeStart
+                                            ? "Time tracking already started"
+                                            : "Start time tracking"}
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => {
+                                              if (student.recordId) {
+                                                handleStopTimeTracking(
+                                                  student.recordId,
+                                                );
+                                              }
+                                            }}
+                                            className="h-8 px-2 py-0"
+                                            disabled={
+                                              !student.recordId ||
+                                              !student.timeStart ||
+                                              !!student.timeEnd
+                                            }
+                                          >
+                                            <Square className="mr-1 h-3 w-3" />
+                                            End
+                                          </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          {!student.timeStart
+                                            ? "Start time tracking first"
+                                            : student.timeEnd
+                                              ? "Time tracking already ended"
+                                              : hasReachedLimit
+                                                ? "Maximum duration reached"
+                                                : "End time tracking"}
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+
+                                    {isActive && student.recordId && (
+                                      <>
+                                        {!isOnBreak ? (
+                                          <TooltipProvider>
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <Button
+                                                  variant="outline"
+                                                  size="sm"
+                                                  onClick={() =>
+                                                    handleStartBreakTime(
+                                                      student.recordId!,
+                                                    )
+                                                  }
+                                                  className="h-8 px-2 py-0"
+                                                  disabled={hasNoBreakTime}
+                                                >
+                                                  <Pause className="mr-1 h-3 w-3" />
+                                                  Pause
+                                                </Button>
+                                              </TooltipTrigger>
+                                              <TooltipContent>
+                                                {hasNoBreakTime
+                                                  ? "No break time remaining"
+                                                  : "Start break (pause tracking)"}
+                                              </TooltipContent>
+                                            </Tooltip>
+                                          </TooltipProvider>
+                                        ) : (
+                                          <TooltipProvider>
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <Button
+                                                  variant="outline"
+                                                  size="sm"
+                                                  onClick={() =>
+                                                    handleStopBreakTime(
+                                                      student.recordId!,
+                                                    )
+                                                  }
+                                                  className="h-8 bg-blue-50 px-2 py-0"
+                                                >
+                                                  <Play className="mr-1 h-3 w-3" />
+                                                  Resume
+                                                </Button>
+                                              </TooltipTrigger>
+                                              <TooltipContent>
+                                                Stop break and resume tracking
+                                              </TooltipContent>
+                                            </Tooltip>
+                                          </TooltipProvider>
+                                        )}
+                                      </>
+                                    )}
+                                  </div>
+                                </TableCell>
+                              </motion.tr>
+                            );
+                          })}
+                        </AnimatePresence>
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="standby">
+            <StandbyStudents />
+          </TabsContent>
+        </Tabs>
       </motion.div>
     </div>
   );

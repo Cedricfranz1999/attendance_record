@@ -99,6 +99,23 @@ export const attendanceRecord = createTRPCRouter({
               data,
             });
           } else {
+            // Check if a record already exists for this student, attendance, and subject
+            const existingRecord = await ctx.db.attendanceRecord.findFirst({
+              where: {
+                studentId: record.studentId,
+                attendanceId: record.attendanceId,
+                subjectId: record.subjectId,
+              },
+            });
+
+            if (existingRecord) {
+              // Update the existing record instead of creating a new one
+              return ctx.db.attendanceRecord.update({
+                where: { id: existingRecord.id },
+                data,
+              });
+            }
+
             // Create new record
             return ctx.db.attendanceRecord.create({
               data: {
@@ -124,18 +141,110 @@ export const attendanceRecord = createTRPCRouter({
         }),
       );
 
-      return { count: results.length };
+      return { count: results.length, records: results };
     }),
 
-  // Rest of your router code...
+  // Modified to handle creating and starting time tracking in one step
+  createAndStartTimeTracking: publicProcedure
+    .input(
+      z.object({
+        studentId: z.number(),
+        attendanceId: z.number(),
+        subjectId: z.number(),
+        status: z.enum(["PRESENT", "ABSENT", "LATE", "EXCUSED"]).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Check if a record already exists
+      const existingRecord = await ctx.db.attendanceRecord.findFirst({
+        where: {
+          studentId: input.studentId,
+          attendanceId: input.attendanceId,
+          subjectId: input.subjectId,
+        },
+      });
+
+      if (existingRecord) {
+        // Update the existing record with time tracking data
+        return ctx.db.attendanceRecord.update({
+          where: { id: existingRecord.id },
+          data: {
+            timeStart: new Date(),
+            breakTime: 600, // Initialize break time to 10 minutes (600 seconds)
+            paused: false, // Ensure break is not active
+            status: input.status || existingRecord.status || "PRESENT",
+          },
+        });
+      }
+
+      // Create a new record with time tracking already started
+      return ctx.db.attendanceRecord.create({
+        data: {
+          studentId: input.studentId,
+          attendanceId: input.attendanceId,
+          subjectId: input.subjectId,
+          status: input.status || "PRESENT", // Default status
+          timeStart: new Date(),
+          breakTime: 600, // Initialize break time to 10 minutes (600 seconds)
+          paused: false, // Ensure break is not active
+        },
+      });
+    }),
+
+  // Keep the original startTimeTracking for existing records
   startTimeTracking: publicProcedure
     .input(
       z.object({
         recordId: z.number(),
+        studentId: z.number().optional(), // Add studentId for new records
+        attendanceId: z.number().optional(), // Add attendanceId for new records
+        subjectId: z.number().optional(), // Add subjectId for new records
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      // Use a more specific update that only updates the timeStart field
+      // If recordId is -1, it's a new record
+      if (input.recordId === -1) {
+        // Ensure we have the required fields for creating a new record
+        if (!input.studentId || !input.attendanceId || !input.subjectId) {
+          throw new Error("Missing required fields for creating a new record");
+        }
+
+        // Check if a record already exists
+        const existingRecord = await ctx.db.attendanceRecord.findFirst({
+          where: {
+            studentId: input.studentId,
+            attendanceId: input.attendanceId,
+            subjectId: input.subjectId,
+          },
+        });
+
+        if (existingRecord) {
+          // Update the existing record with time tracking data
+          return ctx.db.attendanceRecord.update({
+            where: { id: existingRecord.id },
+            data: {
+              timeStart: new Date(),
+              breakTime: 600, // Initialize break time to 10 minutes (600 seconds)
+              paused: false, // Ensure break is not active
+            },
+          });
+        }
+
+        // Create a new record with the provided studentId, attendanceId, and subjectId
+        return ctx.db.attendanceRecord.create({
+          data: {
+            studentId: input.studentId,
+            attendanceId: input.attendanceId,
+            subjectId: input.subjectId,
+            status: "PRESENT", // Default status
+            timeStart: new Date(),
+            breakTime: 600, // Initialize break time to 10 minutes (600 seconds)
+            paused: false, // Ensure break is not active
+          },
+        });
+      }
+
+      // For existing records, just update the timeStart field
       return ctx.db.attendanceRecord.update({
         where: { id: input.recordId },
         data: {

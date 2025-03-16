@@ -2,7 +2,7 @@
 
 import type React from "react";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { api } from "@/trpc/react";
 import { Button } from "@/components/ui/button";
@@ -48,6 +48,7 @@ import {
   Loader,
   Eye,
   CheckCircle,
+  MinusCircle,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -72,6 +73,7 @@ const SubjectsPage = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingSubject, setEditingSubject] = useState<any>(null);
   const [selectedTeacher, setSelectedTeacher] = useState<number | null>(null);
+  const [testCounter, setTestCounter] = useState(0);
   const router = useRouter();
   const pageSize = 10;
 
@@ -214,6 +216,44 @@ const SubjectsPage = () => {
     return `${firstname.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
   };
 
+  const deactivateAllSubjects = api.subjects.deactivateAllSubjects.useMutation({
+    onMutate: () => {
+      console.log("Mutation started");
+    },
+    onSuccess: (data) => {
+      console.log("Mutation succeeded:", data);
+      toast({
+        title: "Success",
+        description: `All subjects deactivated successfully`,
+        className: "bg-green-50 border-green-200",
+      });
+      refetch();
+    },
+    onError: (error) => {
+      console.error("Mutation failed:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to deactivate subjects",
+      });
+    },
+  });
+
+  // Add this function at the top level of your component
+  const handleDeactivateAllSubjects = () => {
+    console.log("Deactivate function called");
+    try {
+      deactivateAllSubjects.mutate();
+      console.log("Mutation called");
+    } catch (error) {
+      console.error("Error calling mutation:", error);
+    }
+  };
+
+  // Add this useEffect to check if the component is mounting properly
+  useEffect(() => {
+    console.log("SubjectsPage component mounted");
+  }, []);
+
   return (
     <>
       {isLoading ? (
@@ -232,16 +272,32 @@ const SubjectsPage = () => {
                 <CardTitle className="text-xl font-bold md:text-2xl">
                   Subjects Management
                 </CardTitle>
-                <Button
-                  onClick={() => {
-                    setEditingSubject(null);
-                    setDialogOpen(true);
-                  }}
-                  className="group transition-all duration-300 hover:bg-primary/90"
-                >
-                  <Plus className="mr-2 h-4 w-4 transition-transform group-hover:rotate-90" />
-                  Add New Subject
-                </Button>
+                <div className="flex items-center gap-3">
+                  <Button
+                    type="button"
+                    className="group bg-red-400 transition-all duration-300 hover:bg-primary/90 hover:bg-red-500"
+                    onClick={handleDeactivateAllSubjects}
+                    disabled={deactivateAllSubjects.isPending}
+                  >
+                    {deactivateAllSubjects.isPending ? (
+                      <Loader className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <MinusCircle className="mr-2 h-4 w-4 transition-transform group-hover:rotate-90" />
+                    )}
+                    Inactive All Subjects
+                  </Button>
+
+                  <Button
+                    onClick={() => {
+                      setEditingSubject(null);
+                      setDialogOpen(true);
+                    }}
+                    className="group bg-green-600 transition-all duration-300 hover:bg-green-800"
+                  >
+                    <Plus className="mr-2 h-4 w-4 transition-transform group-hover:rotate-90" />
+                    Add New Subject
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="p-2 md:p-6">
                 <div className="mb-4 flex flex-col space-y-2 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">

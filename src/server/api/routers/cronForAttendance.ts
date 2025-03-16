@@ -2,12 +2,40 @@ import { createTRPCRouter, publicProcedure } from "../trpc";
 
 export const cronForAttendanceRouter = createTRPCRouter({
   ensureAttendanceForToday: publicProcedure.mutation(async ({ ctx }) => {
+    // Get the current date in the local timezone (Philippines)
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+
+    // Set the time to the start of the day in the local timezone
+    const startOfDayLocal = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate(),
+      0,
+      0,
+      0,
+      0,
+    );
+
+    // Convert the local start of the day to UTC
+    const startOfDayUTC = new Date(
+      Date.UTC(
+        startOfDayLocal.getFullYear(),
+        startOfDayLocal.getMonth(),
+        startOfDayLocal.getDate(),
+        0,
+        0,
+        0,
+        0,
+      ),
+    );
+
+    // Log for debugging
+    console.log("Local start of day:", startOfDayLocal.toISOString());
+    console.log("UTC start of day:", startOfDayUTC.toISOString());
 
     const existingAttendance = await ctx.db.attendance.findFirst({
       where: {
-        date: today,
+        date: startOfDayUTC,
       },
     });
 
@@ -16,11 +44,11 @@ export const cronForAttendanceRouter = createTRPCRouter({
       try {
         const newAttendance = await ctx.db.attendance.upsert({
           where: {
-            date: today,
+            date: startOfDayUTC,
           },
           update: {}, // No updates needed if it exists
           create: {
-            date: today,
+            date: startOfDayUTC,
           },
         });
         return newAttendance;
@@ -29,7 +57,7 @@ export const cronForAttendanceRouter = createTRPCRouter({
         // as it might have been created in a race condition
         const retryExistingAttendance = await ctx.db.attendance.findFirst({
           where: {
-            date: today,
+            date: startOfDayUTC,
           },
         });
 
