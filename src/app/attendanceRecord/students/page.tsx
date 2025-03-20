@@ -46,6 +46,8 @@ import {
   ChevronLeft,
   ChevronRight,
   AlertCircle,
+  X,
+  RefreshCcw,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -59,6 +61,12 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import Loader from "../(components)/Loader";
 
+// Define a type for camera devices
+interface CameraDevice {
+  deviceId: string;
+  label: string;
+}
+
 const StudentsPage = () => {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
@@ -69,8 +77,18 @@ const StudentsPage = () => {
   const [imageSource, setImageSource] = useState<"upload" | "camera">("upload");
   const [showCameraPermissionAlert, setShowCameraPermissionAlert] =
     useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameraDevices, setCameraDevices] = useState<CameraDevice[]>([]);
+  const [selectedCamera, setSelectedCamera] = useState<string>("");
+  const [isLoadingDevices, setIsLoadingDevices] = useState(false);
+  const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(
+    null,
+  );
+
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const pageSize = 10;
 
   const { data, refetch, isLoading } = api.students.getStudents.useQuery({
@@ -94,6 +112,7 @@ const StudentsPage = () => {
       setImagePreview(null);
       setImageSource("upload");
       setShowCameraPermissionAlert(false);
+      stopCameraStream();
     },
   });
 
@@ -136,36 +155,174 @@ const StudentsPage = () => {
     fileInputRef.current?.click();
   };
 
-  const triggerCameraInput = () => {
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      navigator.mediaDevices
-        .getUserMedia({ video: true })
-        .then((stream) => {
-          stream.getTracks().forEach((track) => track.stop());
-          cameraInputRef.current?.click();
-          setShowCameraPermissionAlert(false);
-        })
-        .catch((err) => {
-          console.error("Camera permission denied:", err);
-          toast({
-            title: "Camera Access Denied",
-            description: "Please allow camera access to take a photo.",
-          });
-        });
-    } else {
+  // Function to enumerate and list available camera devices
+  const getCameraDevices = async () => {
+    setIsLoadingDevices(true);
+    try {
+      // First request camera permission
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+
+      // Stop this initial stream
+      stream.getTracks().forEach((track) => track.stop());
+
+      // Now enumerate devices
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices
+        .filter((device) => device.kind === "videoinput")
+        .map((device) => ({
+          deviceId: device.deviceId,
+          label: device.label || `Camera ${device.deviceId.slice(0, 5)}...`,
+        }));
+
+      setCameraDevices(videoDevices);
+
+      // Select the first camera by default if we have devices and none is selected
+      if (videoDevices.length > 0 && !selectedCamera) {
+        setSelectedCamera(videoDevices[0]?.deviceId ?? "");
+      }
+
+      setShowCameraPermissionAlert(false);
+    } catch (err) {
+      console.error("Error accessing camera devices:", err);
       toast({
-        title: "Camera Not Supported",
-        description: "Your browser doesn't support camera access.",
+        title: "Camera Access Error",
+        description:
+          "Could not access camera devices. Please check permissions.",
+      });
+      setShowCameraPermissionAlert(true);
+    } finally {
+      setIsLoadingDevices(false);
+    }
+  };
+
+  // Start camera with the selected device
+  const startCameraStream = async () => {
+    stopCameraStream(); // Stop any existing stream first
+
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("Camera API not supported in this browser");
+      }
+
+      // If no camera is selected but we have devices, select the first one
+      if (!selectedCamera && cameraDevices.length > 0) {
+        setSelectedCamera(cameraDevices[0]?.deviceId ?? "");
+      }
+
+      // Configure camera constraints
+      const constraints: MediaStreamConstraints = {
+        video: selectedCamera ? { deviceId: { exact: selectedCamera } } : true,
+      };
+
+      console.log("Starting camera with constraints:", constraints);
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      setCameraStream(stream);
+      setIsCameraActive(true);
+
+      // We'll handle setting the video source in the useEffect hook
+      // This ensures the video element exists before we try to use it
+
+      setShowCameraPermissionAlert(false);
+    } catch (err) {
+      console.error("Camera stream error:", err);
+      toast({
+        title: "Camera Error",
+        description: `Could not start camera: ${err instanceof Error ? err.message : "Unknown error"}`,
+      });
+      setShowCameraPermissionAlert(true);
+      setIsCameraActive(false);
+    }
+  };
+
+  const stopCameraStream = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach((track) => {
+        console.log(`Stopping track: ${track.kind}, enabled: ${track.enabled}`);
+        track.stop();
+      });
+      setCameraStream(null);
+      setIsCameraActive(false);
+    }
+  };
+
+  const capturePhoto = () => {
+    if (!videoRef.current) {
+      console.error("Video ref is null when trying to capture photo");
+      toast({
+        title: "Capture Error",
+        description: "Could not access camera preview",
+      });
+      return;
+    }
+
+    if (!canvasRef.current) {
+      console.error("Canvas ref is null");
+      return;
+    }
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    try {
+      // Make sure video has dimensions
+      if (!video.videoWidth) {
+        console.error("Video dimensions not available");
+        toast({
+          title: "Capture Error",
+          description: "Video stream not ready yet. Please try again.",
+        });
+        return;
+      }
+
+      // Set canvas dimensions to match video
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+
+      console.log(`Capturing photo: ${canvas.width}x${canvas.height}`);
+
+      // Draw the current video frame to the canvas
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // Convert canvas to data URL and set as preview
+        const dataUrl = canvas.toDataURL("image/png");
+        setImagePreview(dataUrl);
+
+        // Stop the camera stream after capturing
+        stopCameraStream();
+      } else {
+        console.error("Could not get canvas context");
+      }
+    } catch (err) {
+      console.error("Error capturing photo:", err);
+      toast({
+        title: "Capture Error",
+        description: "Could not capture photo from camera",
       });
     }
   };
 
   const handleImageSourceChange = (value: string) => {
     setImageSource(value as "upload" | "camera");
+
     if (value === "camera") {
       setShowCameraPermissionAlert(true);
+      // Get camera devices first, then user can select which one to use
+      getCameraDevices();
     } else {
+      stopCameraStream();
       setShowCameraPermissionAlert(false);
+    }
+  };
+
+  const handleCameraChange = (deviceId: string) => {
+    setSelectedCamera(deviceId);
+    if (isCameraActive) {
+      // Restart the stream with the new camera
+      stopCameraStream();
+      setTimeout(() => startCameraStream(), 100);
     }
   };
 
@@ -190,8 +347,44 @@ const StudentsPage = () => {
     return `${firstname.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
   };
 
+  // Effect to handle video ref initialization
+  useEffect(() => {
+    if (videoRef.current) {
+      setVideoElement(videoRef.current);
+    }
+  }, []);
+
+  // Effect to handle camera stream when it changes
+  useEffect(() => {
+    // This effect handles setting the video source when the stream changes
+    // It ensures the video element exists before trying to use it
+    if (cameraStream && videoRef.current) {
+      console.log("Setting video source with stream");
+      videoRef.current.srcObject = cameraStream;
+
+      videoRef.current.onloadedmetadata = () => {
+        console.log("Video metadata loaded");
+        videoRef.current
+          ?.play()
+          .catch((e) => console.error("Error playing video:", e));
+      };
+
+      videoRef.current.onplay = () => console.log("Video started playing");
+      videoRef.current.onerror = (e) => console.error("Video error:", e);
+    }
+  }, [cameraStream, videoRef.current]);
+
+  // Clean up camera stream when component unmounts
+  useEffect(() => {
+    return () => {
+      stopCameraStream();
+    };
+  }, []);
+
+  // Handle dialog close
   useEffect(() => {
     if (!dialogOpen) {
+      stopCameraStream();
       setShowCameraPermissionAlert(false);
       setImageSource("upload");
     }
@@ -411,7 +604,15 @@ const StudentsPage = () => {
             </Card>
           </motion.div>
 
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <Dialog
+            open={dialogOpen}
+            onOpenChange={(open) => {
+              if (!open) {
+                stopCameraStream();
+              }
+              setDialogOpen(open);
+            }}
+          >
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
                 <DialogTitle>
@@ -496,36 +697,124 @@ const StudentsPage = () => {
                               transition={{ duration: 0.2 }}
                             >
                               <TabsContent value="camera" className="mt-2">
-                                {showCameraPermissionAlert && (
-                                  <Alert className="mb-3">
-                                    <AlertCircle className="h-4 w-4" />
-                                    <AlertTitle>
-                                      Camera Permission Required
-                                    </AlertTitle>
-                                    <AlertDescription>
-                                      You'll need to allow camera access to take
-                                      a photo.
-                                    </AlertDescription>
-                                  </Alert>
-                                )}
-                                <div className="flex justify-center">
+                                {showCameraPermissionAlert &&
+                                  !isCameraActive && (
+                                    <Alert className="mb-3">
+                                      <AlertCircle className="h-4 w-4" />
+                                      <AlertTitle>
+                                        Camera Permission Required
+                                      </AlertTitle>
+                                      <AlertDescription>
+                                        You'll need to allow camera access to
+                                        take a photo.
+                                      </AlertDescription>
+                                    </Alert>
+                                  )}
+
+                                {/* Camera selection dropdown */}
+                                <div className="mb-3">
+                                  <div className="mb-2 flex items-center justify-between">
+                                    <Label>Select Camera</Label>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={getCameraDevices}
+                                      disabled={isLoadingDevices}
+                                      className="h-8 px-2"
+                                    >
+                                      <RefreshCcw className="mr-1 h-3.5 w-3.5" />
+                                      Refresh
+                                    </Button>
+                                  </div>
+
+                                  {isLoadingDevices ? (
+                                    <div className="flex justify-center py-2">
+                                      <Loader />
+                                    </div>
+                                  ) : (
+                                    <Select
+                                      value={selectedCamera}
+                                      onValueChange={handleCameraChange}
+                                      disabled={cameraDevices.length === 0}
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Select a camera" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {cameraDevices.length === 0 ? (
+                                          <SelectItem
+                                            value="no-cameras"
+                                            disabled
+                                          >
+                                            No cameras found
+                                          </SelectItem>
+                                        ) : (
+                                          cameraDevices.map((device) => (
+                                            <SelectItem
+                                              key={device.deviceId}
+                                              value={device.deviceId}
+                                            >
+                                              {device.label}
+                                            </SelectItem>
+                                          ))
+                                        )}
+                                      </SelectContent>
+                                    </Select>
+                                  )}
+                                </div>
+
+                                {/* Camera preview - ALWAYS render the video element but hide it when not active */}
+                                <div
+                                  className={`relative mb-3 overflow-hidden rounded-lg border bg-black ${!isCameraActive ? "hidden" : ""}`}
+                                >
+                                  <video
+                                    ref={videoRef}
+                                    autoPlay
+                                    playsInline
+                                    muted
+                                    className="h-auto w-full"
+                                  />
                                   <Button
                                     type="button"
                                     variant="outline"
-                                    onClick={triggerCameraInput}
-                                    className="w-full"
+                                    size="sm"
+                                    className="absolute right-2 top-2 h-8 w-8 bg-background/80 p-0 backdrop-blur-sm"
+                                    onClick={stopCameraStream}
                                   >
-                                    <Camera className="mr-2 h-4 w-4" />
-                                    Take Photo
+                                    <X className="h-4 w-4" />
                                   </Button>
-                                  <input
-                                    ref={cameraInputRef}
-                                    type="file"
-                                    accept="image/*"
-                                    capture="environment"
-                                    onChange={handleFileChange}
-                                    className="hidden"
-                                  />
+                                </div>
+
+                                {/* Hidden canvas for capturing photos */}
+                                <canvas ref={canvasRef} className="hidden" />
+
+                                <div className="flex justify-center">
+                                  {!isCameraActive ? (
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      onClick={startCameraStream}
+                                      className="w-full"
+                                      disabled={
+                                        !selectedCamera &&
+                                        cameraDevices.length > 0
+                                      }
+                                    >
+                                      <Camera className="mr-2 h-4 w-4" />
+                                      Start Camera
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      type="button"
+                                      variant="default"
+                                      onClick={capturePhoto}
+                                      className="w-full"
+                                    >
+                                      <Camera className="mr-2 h-4 w-4" />
+                                      Take Photo
+                                    </Button>
+                                  )}
                                 </div>
                               </TabsContent>
                             </motion.div>

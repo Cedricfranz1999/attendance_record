@@ -100,10 +100,15 @@ export const SubjectsRouter = createTRPCRouter({
             }),
           );
 
-          // Create a map of student IDs to their status from the previous subject
+          // Create maps of student IDs to their status and totalTimeRender from the previous subject
           const studentStatusMap = new Map();
+          const studentTotalTimeRenderMap = new Map();
           attendanceRecords.forEach((record) => {
             studentStatusMap.set(record.studentId, record.status);
+            studentTotalTimeRenderMap.set(
+              record.studentId,
+              record.totalTimeRender || 0,
+            );
           });
 
           // Create new attendance records for ALL students for the new subject
@@ -116,11 +121,17 @@ export const SubjectsRouter = createTRPCRouter({
               const status =
                 studentStatusMap.get(student.id) || AttendanceStatus.ABSENT;
 
+              // Get the totalTimeRender from the previous subject, or default to 0
+              const totalTimeRender =
+                studentTotalTimeRenderMap.get(student.id) || 0;
+
               console.log(
                 "Creating new record for student:",
                 student.id,
                 "with status:",
                 status,
+                "and totalTimeRender:",
+                totalTimeRender,
               );
 
               // Only set timeStart for PRESENT or LATE status
@@ -139,11 +150,10 @@ export const SubjectsRouter = createTRPCRouter({
                   timeStart: timeStart, // Only set timeStart for PRESENT or LATE
                   timeEnd: null, // timeEnd is not set initially
                   breakTime: 600, // Default breakTime
-                  totalTimeRender: 0, // Default totalTimeRender
+                  totalTimeRender: totalTimeRender, // Preserve totalTimeRender from previous subject
                   paused: false, // Set paused to false
                 },
               });
-              console.log("New record created for student:", student.id);
             }),
           );
         } else {
@@ -190,7 +200,7 @@ export const SubjectsRouter = createTRPCRouter({
                   timeStart: standbyStudent.startTime, // Use the standby student's startTime
                   timeEnd: null, // timeEnd is not set initially
                   breakTime: 600, // Default breakTime
-                  totalTimeRender: 0, // Default totalTimeRender
+                  totalTimeRender: 0, // Default to 0 for standby students since they don't have totalTimeRender field
                   paused: false, // Set paused to false
                 },
               });
@@ -233,7 +243,7 @@ export const SubjectsRouter = createTRPCRouter({
                     timeStart: null, // No timeStart for ABSENT
                     timeEnd: null, // timeEnd is not set initially
                     breakTime: 600, // Default breakTime
-                    totalTimeRender: 0, // Default totalTimeRender
+                    totalTimeRender: 0, // Default to 0 for non-standby students
                     paused: false, // Set paused to false
                   },
                 });

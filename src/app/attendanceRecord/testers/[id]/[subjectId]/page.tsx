@@ -19,7 +19,6 @@ import {
   CardHeader,
   CardTitle,
   CardDescription,
-  CardFooter,
 } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -57,7 +56,6 @@ const attendanceStatusOptions = [
   { value: "EXCUSED", label: "Excused", color: "bg-blue-100 text-blue-800" },
 ];
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Label } from "@/components/ui/label";
 import StandbyStudents from "@/app/_components/standbyStudents";
 
 // Type for student attendance record
@@ -839,6 +837,33 @@ export default function AttendanceRecordPage() {
             }
           }
 
+          // Check if percentage reaches 100% and automatically end time tracking
+          if (student.timeStart && !student.timeEnd && !student.paused) {
+            const percentage = calculatePercentage(
+              student.timeStart,
+              null,
+              student,
+            );
+            if (percentage >= 100) {
+              // Auto-end time tracking when percentage reaches 100%
+              if (student.recordId) {
+                stopTimeTracking.mutate({
+                  recordId: student.recordId,
+                  subjectDuration,
+                });
+              }
+
+              return {
+                ...student,
+                timeEnd: new Date(),
+                paused: false,
+                breakStartTime: null,
+                lastActiveTime: null,
+                actualTimeRender,
+              };
+            }
+          }
+
           // Handle students on break
           if (student.paused && student.breakStartTime && !student.timeEnd) {
             // Calculate new break time
@@ -904,7 +929,7 @@ export default function AttendanceRecordPage() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [students]);
+  }, [students, subjectDuration]);
 
   // Effect to save totalTimeRender to the database every second
   useEffect(() => {
@@ -1050,14 +1075,14 @@ export default function AttendanceRecordPage() {
       (now.getTime() - breakStartTime.getTime()) / 1000,
     );
 
+    // Use the current break time from the student object
+    const currentBreakTime = student.breakTime || 0;
+    const newBreakTime = Math.max(0, currentBreakTime);
+
     stopBreakTime.mutate({
       recordId,
       elapsedBreakTime: elapsedSeconds,
     });
-
-    // Calculate new break time
-    const currentBreakTime = student.breakTime || 600;
-    const newBreakTime = Math.max(0, currentBreakTime - elapsedSeconds);
 
     // Reset the last total time update for this student to force an immediate update
     setLastTotalTimeUpdate((prev) => ({
@@ -1349,7 +1374,10 @@ export default function AttendanceRecordPage() {
                               -
                               {new Date(subjectData.endTime).toLocaleTimeString(
                                 [],
-                                { hour: "2-digit", minute: "2-digit" },
+                                {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                },
                               )}
                               )
                             </span>
@@ -1672,7 +1700,8 @@ export default function AttendanceRecordPage() {
                                             className="h-8 px-2 py-0"
                                             disabled={
                                               !!student.timeStart ||
-                                              !subjectData?.active
+                                              !subjectData?.active ||
+                                              percentage >= 100
                                             }
                                           >
                                             <Clock className="mr-1 h-3 w-3" />
@@ -1680,9 +1709,11 @@ export default function AttendanceRecordPage() {
                                           </Button>
                                         </TooltipTrigger>
                                         <TooltipContent>
-                                          {student.timeStart
-                                            ? "Time tracking already started"
-                                            : "Start time tracking"}
+                                          {percentage >= 100
+                                            ? "Maximum attendance reached"
+                                            : student.timeStart
+                                              ? "Time tracking already started"
+                                              : "Start time tracking"}
                                         </TooltipContent>
                                       </Tooltip>
                                     </TooltipProvider>
@@ -1704,7 +1735,8 @@ export default function AttendanceRecordPage() {
                                             disabled={
                                               !student.recordId ||
                                               !student.timeStart ||
-                                              !!student.timeEnd
+                                              !!student.timeEnd ||
+                                              percentage >= 100
                                             }
                                           >
                                             <Square className="mr-1 h-3 w-3" />
@@ -1712,13 +1744,15 @@ export default function AttendanceRecordPage() {
                                           </Button>
                                         </TooltipTrigger>
                                         <TooltipContent>
-                                          {!student.timeStart
-                                            ? "Start time tracking first"
-                                            : student.timeEnd
-                                              ? "Time tracking already ended"
-                                              : hasReachedLimit
-                                                ? "Maximum duration reached"
-                                                : "End time tracking"}
+                                          {percentage >= 100
+                                            ? "Maximum attendance reached"
+                                            : !student.timeStart
+                                              ? "Start time tracking first"
+                                              : student.timeEnd
+                                                ? "Time tracking already ended"
+                                                : hasReachedLimit
+                                                  ? "Maximum duration reached"
+                                                  : "End time tracking"}
                                         </TooltipContent>
                                       </Tooltip>
                                     </TooltipProvider>
@@ -1738,16 +1772,21 @@ export default function AttendanceRecordPage() {
                                                     )
                                                   }
                                                   className="h-8 px-2 py-0"
-                                                  disabled={hasNoBreakTime}
+                                                  disabled={
+                                                    hasNoBreakTime ||
+                                                    percentage >= 100
+                                                  }
                                                 >
                                                   <Pause className="mr-1 h-3 w-3" />
                                                   Pause
                                                 </Button>
                                               </TooltipTrigger>
                                               <TooltipContent>
-                                                {hasNoBreakTime
-                                                  ? "No break time remaining"
-                                                  : "Start break (pause tracking)"}
+                                                {percentage >= 100
+                                                  ? "Maximum attendance reached"
+                                                  : hasNoBreakTime
+                                                    ? "No break time remaining"
+                                                    : "Start break (pause tracking)"}
                                               </TooltipContent>
                                             </Tooltip>
                                           </TooltipProvider>
@@ -1764,13 +1803,16 @@ export default function AttendanceRecordPage() {
                                                     )
                                                   }
                                                   className="h-8 bg-blue-50 px-2 py-0"
+                                                  disabled={percentage >= 100}
                                                 >
                                                   <Play className="mr-1 h-3 w-3" />
                                                   Resume
                                                 </Button>
                                               </TooltipTrigger>
                                               <TooltipContent>
-                                                Stop break and resume tracking
+                                                {percentage >= 100
+                                                  ? "Maximum attendance reached"
+                                                  : "Stop break and resume tracking"}
                                               </TooltipContent>
                                             </Tooltip>
                                           </TooltipProvider>
