@@ -59,6 +59,12 @@ const Sidebar = () => {
       label: "Tester",
       icon: <NotebookText className="h-4 w-4" />,
     },
+
+    {
+      href: "/attendanceRecord/facial-recognition",
+      label: "Facial Recognition",
+      icon: <NotebookText className="h-4 w-4" />,
+    },
   ];
 
   return (
