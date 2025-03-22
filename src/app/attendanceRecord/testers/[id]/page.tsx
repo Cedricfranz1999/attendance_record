@@ -108,6 +108,7 @@ const SubjectsPage = () => {
       refetch();
       refetchAttendance();
       setSubjectToActivate(null);
+      refetchAttendance();
     },
     onError: (error) => {
       toast({
@@ -185,7 +186,6 @@ const SubjectsPage = () => {
       toast({
         title: "Warning",
         description: "Please select a subject to activate",
-        variant: "destructive",
       });
     }
   };
@@ -379,7 +379,7 @@ const SubjectsPage = () => {
                 </div>
 
                 {/* Subject Activation Dropdown */}
-                {/* <div className="mb-4 flex flex-col space-y-2 sm:flex-row sm:items-center sm:space-x-4 sm:space-y-0">
+                <div className="mb-4 flex flex-col space-y-2 sm:flex-row sm:items-center sm:space-x-4 sm:space-y-0">
                   <div className="flex-1">
                     <Select
                       value={subjectToActivate ? String(subjectToActivate) : ""}
@@ -416,7 +416,7 @@ const SubjectsPage = () => {
                     )}
                     Activate Selected Subject
                   </Button>
-                </div> */}
+                </div>
 
                 <div className="overflow-hidden rounded-md border">
                   <div className="overflow-x-auto">
