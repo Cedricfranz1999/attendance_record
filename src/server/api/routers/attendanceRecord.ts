@@ -464,6 +464,7 @@ export const attendanceRecord = createTRPCRouter({
         subjectId: z.number(),
         subjectStartTime: z.date(),
         minPercentage: z.number().default(75), // Default to 75% attendance required
+        lateThresholdPercent: z.number().default(10), // Default to 10% threshold for lateness
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -501,6 +502,11 @@ export const attendanceRecord = createTRPCRouter({
         throw new Error("Subject duration not available");
       }
 
+      // Calculate the late threshold in minutes (10% of total duration)
+      const lateThresholdMinutes = Math.floor(
+        subjectDuration * (input.lateThresholdPercent / 100),
+      );
+
       // Process each record to determine the appropriate status
       const updatePromises = records.map(async (record) => {
         if (!record.timeStart) return null; // Skip records without time tracking
@@ -518,10 +524,17 @@ export const attendanceRecord = createTRPCRouter({
         // Calculate percentage of attendance
         const percentage = (durationMinutes / subjectDuration) * 100;
 
-        // Determine if student was late
+        // Determine if student was late (more than 10% of class duration)
         const studentStartTime = new Date(record.timeStart);
         const subjectStart = new Date(input.subjectStartTime);
-        const isLate = studentStartTime > subjectStart;
+
+        // Calculate minutes late
+        const minutesLate = Math.floor(
+          (studentStartTime.getTime() - subjectStart.getTime()) / (1000 * 60),
+        );
+
+        // Student is late if they arrived after the late threshold minutes
+        const isLate = minutesLate > lateThresholdMinutes;
 
         // Determine status based on criteria
         let newStatus: "PRESENT" | "ABSENT" | "LATE" | "EXCUSED";
@@ -530,10 +543,10 @@ export const attendanceRecord = createTRPCRouter({
           // Less than minimum percentage = ABSENT
           newStatus = "ABSENT";
         } else if (isLate) {
-          // More than minimum percentage but late = LATE
+          // More than minimum percentage but late (beyond 10% threshold) = LATE
           newStatus = "LATE";
         } else {
-          // More than minimum percentage and on time = PRESENT
+          // More than minimum percentage and on time (or within 10% threshold) = PRESENT
           newStatus = "PRESENT";
         }
 

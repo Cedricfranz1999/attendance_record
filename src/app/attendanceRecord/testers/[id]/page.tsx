@@ -435,6 +435,7 @@ const SubjectsPage = () => {
                                         variant={
                                           subject.active ? "default" : "outline"
                                         }
+                                        disabled={toggleSubjectActive.isPending}
                                         size="sm"
                                         onClick={() =>
                                           handleToggleActive(subject.id)
