@@ -10,6 +10,9 @@ export const attendanceRecord = createTRPCRouter({
       });
     }),
 
+  getStudentAttendanceRefetch: publicProcedure.query(({ ctx, input }) => {
+    return ctx.db.attendance.count();
+  }),
   getStudentsForAttendance: publicProcedure
     .input(
       z.object({

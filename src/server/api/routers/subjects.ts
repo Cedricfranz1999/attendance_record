@@ -245,7 +245,7 @@ export const SubjectsRouter = createTRPCRouter({
                   },
                   data: {
                     status: statusValue,
-                    timeStart: standbyStudent.startTime,
+                    timeStart: newSubject.startTime,
                     timeEnd: null,
                     breakTime: 600,
                     totalTimeRender: 0,
@@ -260,7 +260,7 @@ export const SubjectsRouter = createTRPCRouter({
                     studentId: standbyStudent.studentId,
                     subjectId: input.subjectId,
                     status: statusValue, // Use the converted enum value
-                    timeStart: standbyStudent.startTime, // Use the standby student's startTime
+                    timeStart: newSubject.startTime, // Use the subject's start time instead of standby start time
                     timeEnd: null, // timeEnd is not set initially
                     breakTime: 600, // Default breakTime
                     totalTimeRender: 0, // Default to 0 for standby students since they don't have totalTimeRender field
@@ -380,6 +380,7 @@ export const SubjectsRouter = createTRPCRouter({
         throw new Error("Failed to toggle subject active status");
       }
     }),
+
   getSubjects: publicProcedure
     .input(
       z.object({
