@@ -2,11 +2,6 @@ import { RekognitionClient } from "@aws-sdk/client-rekognition";
 
 export const rekognitionClient = new RekognitionClient({
   region: "ap-southeast-2",
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID as string,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY as string,
-    sessionToken: process.env.AWS_SESSION_TOKEN as string, 
-  },
 });
 
 export const template =  
