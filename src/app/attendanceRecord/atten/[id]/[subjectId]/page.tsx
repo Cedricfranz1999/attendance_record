@@ -229,7 +229,6 @@ export default function AttendanceRecordPage() {
         description: `Status auto-adjusted for ${data.count} students`,
         className: "bg-green-50 border-green-200",
       });
-      refetch();
     },
     onError: (error) => {
       toast({

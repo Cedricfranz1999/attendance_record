@@ -141,19 +141,51 @@ export const SubjectsRouter = createTRPCRouter({
                   ? newSubject.startTime
                   : null;
 
-              await ctx.db.attendanceRecord.create({
-                data: {
-                  attendanceId: latestAttendanceId,
-                  studentId: student.id,
-                  subjectId: input.subjectId,
-                  status: status, // Inherit status from previous subject or default to ABSENT
-                  timeStart: timeStart, // Only set timeStart for PRESENT or LATE
-                  timeEnd: null, // timeEnd is not set initially
-                  breakTime: 600, // Default breakTime
-                  totalTimeRender: totalTimeRender, // Preserve totalTimeRender from previous subject
-                  paused: false, // Set paused to false
+              // Check if record exists first
+              const existingRecord = await ctx.db.attendanceRecord.findUnique({
+                where: {
+                  attendanceId_studentId_subjectId: {
+                    attendanceId: latestAttendanceId,
+                    studentId: student.id,
+                    subjectId: input.subjectId,
+                  },
                 },
               });
+
+              if (existingRecord) {
+                // Update existing record
+                console.log(
+                  "Existing record found, updating instead of creating",
+                );
+                await ctx.db.attendanceRecord.update({
+                  where: {
+                    id: existingRecord.id,
+                  },
+                  data: {
+                    status: status,
+                    timeStart: timeStart,
+                    timeEnd: null,
+                    breakTime: 600,
+                    totalTimeRender: totalTimeRender,
+                    paused: false,
+                  },
+                });
+              } else {
+                // Create new record
+                await ctx.db.attendanceRecord.create({
+                  data: {
+                    attendanceId: latestAttendanceId,
+                    studentId: student.id,
+                    subjectId: input.subjectId,
+                    status: "ABSENT", // Inherit status from previous subject or default to ABSENT
+                    timeStart: timeStart, // Only set timeStart for PRESENT or LATE
+                    timeEnd: null, // timeEnd is not set initially
+                    breakTime: 600, // Default breakTime
+                    totalTimeRender: totalTimeRender, // Preserve totalTimeRender from previous subject
+                    paused: false, // Set paused to false
+                  },
+                });
+              }
             }),
           );
         } else {
@@ -191,19 +223,52 @@ export const SubjectsRouter = createTRPCRouter({
                 }
               }
 
-              await ctx.db.attendanceRecord.create({
-                data: {
-                  attendanceId: latestAttendanceId,
-                  studentId: standbyStudent.studentId,
-                  subjectId: input.subjectId,
-                  status: statusValue, // Use the converted enum value
-                  timeStart: standbyStudent.startTime, // Use the standby student's startTime
-                  timeEnd: null, // timeEnd is not set initially
-                  breakTime: 600, // Default breakTime
-                  totalTimeRender: 0, // Default to 0 for standby students since they don't have totalTimeRender field
-                  paused: false, // Set paused to false
+              // Check if record exists first
+              const existingRecord = await ctx.db.attendanceRecord.findUnique({
+                where: {
+                  attendanceId_studentId_subjectId: {
+                    attendanceId: latestAttendanceId,
+                    studentId: standbyStudent.studentId,
+                    subjectId: input.subjectId,
+                  },
                 },
               });
+
+              if (existingRecord) {
+                // Update existing record
+                console.log(
+                  "Existing record found for standby student, updating instead of creating",
+                );
+                await ctx.db.attendanceRecord.update({
+                  where: {
+                    id: existingRecord.id,
+                  },
+                  data: {
+                    status: statusValue,
+                    timeStart: newSubject.startTime,
+                    timeEnd: null,
+                    breakTime: 600,
+                    totalTimeRender: 0,
+                    paused: false,
+                  },
+                });
+              } else {
+                // Create new record
+                await ctx.db.attendanceRecord.create({
+                  data: {
+                    attendanceId: latestAttendanceId,
+                    studentId: standbyStudent.studentId,
+                    subjectId: input.subjectId,
+                    status: statusValue, // Use the converted enum value
+                    timeStart: newSubject.startTime, // Use the subject's start time instead of standby start time
+                    timeEnd: null, // timeEnd is not set initially
+                    breakTime: 600, // Default breakTime
+                    totalTimeRender: 0, // Default to 0 for standby students since they don't have totalTimeRender field
+                    paused: false, // Set paused to false
+                  },
+                });
+              }
+
               console.log(
                 "New record created for standby student:",
                 standbyStudent.studentId,
@@ -234,19 +299,54 @@ export const SubjectsRouter = createTRPCRouter({
                   student.id,
                 );
 
-                await ctx.db.attendanceRecord.create({
-                  data: {
-                    attendanceId: latestAttendanceId,
-                    studentId: student.id,
-                    subjectId: input.subjectId,
-                    status: AttendanceStatus.ABSENT, // Default to ABSENT for non-standby students
-                    timeStart: null, // No timeStart for ABSENT
-                    timeEnd: null, // timeEnd is not set initially
-                    breakTime: 600, // Default breakTime
-                    totalTimeRender: 0, // Default to 0 for non-standby students
-                    paused: false, // Set paused to false
+                // Check if record exists first
+                const existingRecord = await ctx.db.attendanceRecord.findUnique(
+                  {
+                    where: {
+                      attendanceId_studentId_subjectId: {
+                        attendanceId: latestAttendanceId,
+                        studentId: student.id,
+                        subjectId: input.subjectId,
+                      },
+                    },
                   },
-                });
+                );
+
+                if (existingRecord) {
+                  // Update existing record
+                  console.log(
+                    "Existing record found for non-standby student, updating instead of creating",
+                  );
+                  await ctx.db.attendanceRecord.update({
+                    where: {
+                      id: existingRecord.id,
+                    },
+                    data: {
+                      status: AttendanceStatus.ABSENT,
+                      timeStart: null,
+                      timeEnd: null,
+                      breakTime: 600,
+                      totalTimeRender: 0,
+                      paused: false,
+                    },
+                  });
+                } else {
+                  // Create new record
+                  await ctx.db.attendanceRecord.create({
+                    data: {
+                      attendanceId: latestAttendanceId,
+                      studentId: student.id,
+                      subjectId: input.subjectId,
+                      status: AttendanceStatus.ABSENT, // Default to ABSENT for non-standby students
+                      timeStart: null, // No timeStart for ABSENT
+                      timeEnd: null, // timeEnd is not set initially
+                      breakTime: 600, // Default breakTime
+                      totalTimeRender: 0, // Default to 0 for non-standby students
+                      paused: false, // Set paused to false
+                    },
+                  });
+                }
+
                 console.log(
                   "New record created for non-standby student:",
                   student.id,
@@ -280,6 +380,7 @@ export const SubjectsRouter = createTRPCRouter({
         throw new Error("Failed to toggle subject active status");
       }
     }),
+
   getSubjects: publicProcedure
     .input(
       z.object({

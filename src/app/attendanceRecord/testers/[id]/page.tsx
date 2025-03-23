@@ -74,6 +74,9 @@ const SubjectsPage = () => {
   const [editingSubject, setEditingSubject] = useState<any>(null);
   const [selectedTeacher, setSelectedTeacher] = useState<number | null>(null);
   const [testCounter, setTestCounter] = useState(0);
+  const [subjectToActivate, setSubjectToActivate] = useState<number | null>(
+    null,
+  );
   const router = useRouter();
   const pageSize = 10;
 
@@ -89,7 +92,12 @@ const SubjectsPage = () => {
   const { data: teachers } = api.subjects.getAllTeachers.useQuery();
   const pathname = usePathname(); // Get the current path
 
-  // Toggle subject active status mutation
+  const {
+    data: studentsData,
+    isLoading: studentsLoading,
+    refetch: refetchAttendance,
+  } = api.attendanceRecord.getStudentAttendanceRefetch.useQuery();
+
   const toggleSubjectActive = api.subjects.toggleSubjectActive.useMutation({
     onSuccess: (data) => {
       toast({
@@ -98,6 +106,9 @@ const SubjectsPage = () => {
         className: "bg-green-50 border-green-200",
       });
       refetch();
+      refetchAttendance();
+      setSubjectToActivate(null);
+      refetchAttendance();
     },
     onError: (error) => {
       toast({
@@ -163,6 +174,20 @@ const SubjectsPage = () => {
     toggleSubjectActive.mutate({
       subjectId,
     });
+  };
+
+  // Handle activation from dropdown
+  const handleActivateSelectedSubject = () => {
+    if (subjectToActivate) {
+      toggleSubjectActive.mutate({
+        subjectId: subjectToActivate,
+      });
+    } else {
+      toast({
+        title: "Warning",
+        description: "Please select a subject to activate",
+      });
+    }
   };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -353,6 +378,46 @@ const SubjectsPage = () => {
                   </div>
                 </div>
 
+                {/* Subject Activation Dropdown */}
+                <div className="mb-4 flex flex-col space-y-2 sm:flex-row sm:items-center sm:space-x-4 sm:space-y-0">
+                  <div className="flex-1">
+                    <Select
+                      value={subjectToActivate ? String(subjectToActivate) : ""}
+                      onValueChange={(value) =>
+                        setSubjectToActivate(value ? Number(value) : null)
+                      }
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select subject to activate" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {data?.data.map((subject) => (
+                          <SelectItem
+                            key={subject.id}
+                            value={subject.id.toString()}
+                          >
+                            {subject.name} - {getTeacherName(subject.teacher)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    onClick={handleActivateSelectedSubject}
+                    disabled={
+                      !subjectToActivate || toggleSubjectActive.isPending
+                    }
+                    className="bg-green-500 hover:bg-green-600"
+                  >
+                    {toggleSubjectActive.isPending ? (
+                      <Loader className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                    )}
+                    Activate Selected Subject
+                  </Button>
+                </div>
+
                 <div className="overflow-hidden rounded-md border">
                   <div className="overflow-x-auto">
                     <Table>
@@ -435,6 +500,7 @@ const SubjectsPage = () => {
                                         variant={
                                           subject.active ? "default" : "outline"
                                         }
+                                        disabled={toggleSubjectActive.isPending}
                                         size="sm"
                                         onClick={() =>
                                           handleToggleActive(subject.id)

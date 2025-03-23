@@ -279,11 +279,15 @@ export default function AttendanceRecordPage() {
   const studentsBeforeAutoAdjustRef = useRef<StudentAttendance[]>([]);
 
   // Fetch attendance details
-  const { data: attendanceData, isLoading: attendanceLoading } =
-    api.attendanceRecord.getAttendanceById.useQuery(
-      { id: attendanceId },
-      { enabled: !!attendanceId },
-    );
+  const {
+    data: attendanceData,
+    isLoading: attendanceLoading,
+    refetch: refetchAttendance,
+  } = api.attendanceRecord.getAttendanceById.useQuery(
+    { id: attendanceId },
+    { enabled: !!attendanceId },
+  );
+  refetchAttendance();
 
   // Fetch subject details
   const { data: subjectData, isLoading: subjectLoading } =
