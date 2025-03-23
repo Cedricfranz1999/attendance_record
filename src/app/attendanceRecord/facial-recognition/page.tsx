@@ -1,11 +1,6 @@
-"use client";
-import { api } from "@/trpc/react";
-import React from "react";
+'use client'
 
-const page = () => {
-  const { data, refetch } = api.facialRecognition.studentsDAta.useQuery();
-  console.log("DATA", data);
-  return <div> facial recognition</div>;
-};
-
-export default page;
+// men ayaw baguha kay magka error sa hydration
+import dynamic from "next/dynamic";
+const FaceRecognitionPage = dynamic(() => import("./_component/page"), { ssr: false });
+export default FaceRecognitionPage;

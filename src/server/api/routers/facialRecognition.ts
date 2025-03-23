@@ -7,4 +7,20 @@ export const facialRecognitionRouter = createTRPCRouter({
 
     return data;
   }),
+
+  timeIn: publicProcedure.input(z.object({
+    id: z.string(),
+    type: z.enum(['TIME_IN', 'TIME_OUT'])
+  }))
+  .mutation(async ({ctx, input}) => {
+    
+  }),
+  
+  timeOut: publicProcedure.input(z.object({
+    id: z.string(),
+    type: z.enum(['TIME_IN', 'TIME_OUT'])
+  }))
+  .mutation(async ({ctx, input}) => {
+    
+  }) 
 });

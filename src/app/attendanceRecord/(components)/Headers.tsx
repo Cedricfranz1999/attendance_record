@@ -68,7 +68,6 @@ const links = [
 
 const Header = () => {
   const { user } = useUser();
-  console.log(user);
   const router = useRouter();
 
   const handleLogout = () => {

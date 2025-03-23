@@ -11,6 +11,9 @@ export const env = createEnv({
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
+    aws_access_key_id: z.string(),
+    aws_secret_access_key: z.string(),
+    aws_session_token: z.string()
   },
 
   /**
@@ -29,6 +32,9 @@ export const env = createEnv({
   runtimeEnv: {
     DATABASE_URL: process.env.DATABASE_URL,
     NODE_ENV: process.env.NODE_ENV,
+    aws_access_key_id: process.env.aws_access_key_id,
+    aws_secret_access_key: process.env.aws_secret_access_key,
+    aws_session_token: process.env.aws_session_token,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },
   /**
