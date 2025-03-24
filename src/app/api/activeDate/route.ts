@@ -12,7 +12,7 @@ export async function GET() {
         date: "desc", // Order by date in descending order to get the latest date
       },
       select: {
-        date: true, // Select only the date field
+        id: true,
       },
     });
 
