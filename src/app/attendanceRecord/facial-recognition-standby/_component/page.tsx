@@ -555,7 +555,11 @@ const page = () => {
               </SelectTrigger>
               <SelectContent>
                 {cameraDevices.map((device) => (
-                  <SelectItem key={device.deviceId} value={device.deviceId}>
+                  <SelectItem
+                    key={device.deviceId}
+                    value={device.deviceId}
+                    defaultValue={"test"}
+                  >
                     {device.label ||
                       `Camera ${cameraDevices.indexOf(device) + 1}`}
                   </SelectItem>
@@ -607,13 +611,18 @@ const page = () => {
             <Select
               value={timeOutCameraId}
               onValueChange={handleTimeOutCameraChange}
+              defaultValue={"test"}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select Time Out Camera" />
               </SelectTrigger>
               <SelectContent>
                 {cameraDevices.map((device) => (
-                  <SelectItem key={device.deviceId} value={device.deviceId}>
+                  <SelectItem
+                    key={device.deviceId}
+                    value={device.deviceId}
+                    defaultValue={"test"}
+                  >
                     {device.label ||
                       `Camera ${cameraDevices.indexOf(device) + 1}`}
                   </SelectItem>
