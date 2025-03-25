@@ -5,58 +5,31 @@ const prisma = new PrismaClient();
 
 export async function POST(request: Request) {
   try {
-    console.log("Processing POST request..."); // Debug log
+    console.log("Processing POST request...");
 
     // Parse the request body
     const body = await request.json();
-    const { attendanceId, studentId, subjectId, timeStart, timeEnd, paused } =
-      body;
+    const { attendanceId, studentId, subjectId, paused } = body;
 
-    console.log("Request body:", body); // Debug log
+    console.log("Request body:", body);
 
     // Validate required fields
-    if (!attendanceId || !studentId) {
+    if (!attendanceId || !studentId || !subjectId) {
       return NextResponse.json(
-        { error: "attendanceId and studentId are required" },
+        { error: "attendanceId, studentId, and subjectId are required" },
         { status: 400 },
       );
     }
 
-    // If subjectId is null or not provided, create a standby record
-    if (subjectId === null || subjectId === undefined) {
-      // Get the current time in the Philippines (UTC+8)
-      const currentTime = new Date();
-      const philippinesTime = new Date(
-        currentTime.getTime() + 8 * 60 * 60 * 1000,
-      );
+    // ✅ Get the correct Philippines time (UTC+8)
+    const philippinesTime = new Date().toLocaleString("en-US", {
+      timeZone: "Asia/Manila",
+    });
 
-      // Create a standby record
-      const standbyRecord = await prisma.standbyStudents.create({
-        data: {
-          startTime: philippinesTime, // Set to current time in the Philippines
-          status: "PRESENT", // Default status
-          studentId, // Associate with the student
-        },
-      });
+    const formattedPhilippinesTime = new Date(philippinesTime);
 
-      console.log("Standby record created:", standbyRecord); // Debug log
-
-      // Return the standby record
-      return NextResponse.json(standbyRecord, { status: 200 });
-    }
-
-    // If subjectId is provided, proceed with the attendance record upsert
-    const updateData: Record<string, any> = {
-      timeEnd,
-      paused,
-    };
-
-    if (timeStart !== null && timeStart !== undefined) {
-      updateData.timeStart = timeStart;
-    }
-
-    // Use upsert to either update or create a record
-    const record = await prisma.attendanceRecord.upsert({
+    // Find the existing attendance record
+    const existingRecord = await prisma.attendanceRecord.findUnique({
       where: {
         attendanceId_studentId_subjectId: {
           attendanceId,
@@ -64,23 +37,54 @@ export async function POST(request: Request) {
           subjectId,
         },
       },
-      update: updateData, // Dynamically built update object
-      create: {
-        attendanceId,
-        studentId,
-        subjectId,
-        timeStart,
-        timeEnd,
-        paused,
-      },
     });
 
-    console.log("Upserted record:", record); // Debug log
+    // ✅ If paused is true and there is no timeStart, do nothing and return success
+    if (paused && existingRecord && !existingRecord.timeStart) {
+      console.log(
+        "No action taken as 'paused' is true and no timeStart exists.",
+      );
+      return NextResponse.json({ message: "No action taken" }, { status: 200 });
+    }
 
-    // Return the upserted record
+    let record;
+
+    if (existingRecord) {
+      // Preserve totalTimeRender by not modifying it
+      const updateData: Record<string, any> = { paused };
+
+      if (!existingRecord.timeStart) {
+        updateData.timeStart = formattedPhilippinesTime;
+      }
+
+      // ✅ Ensure totalTimeRender remains unchanged
+      record = await prisma.attendanceRecord.update({
+        where: {
+          attendanceId_studentId_subjectId: {
+            attendanceId,
+            studentId,
+            subjectId,
+          },
+        },
+        data: updateData,
+      });
+    } else {
+      // Create a new record with the correct time
+      record = await prisma.attendanceRecord.create({
+        data: {
+          attendanceId,
+          studentId,
+          subjectId,
+          timeStart: formattedPhilippinesTime,
+          paused,
+        },
+      });
+    }
+
+    console.log("Record processed:", record);
     return NextResponse.json(record, { status: 200 });
   } catch (error) {
-    console.error("Error processing POST request:", error); // Debug log
+    console.error("Error processing POST request:", error);
     return NextResponse.json(
       { error: "Failed to process POST request" },
       { status: 500 },

@@ -57,6 +57,7 @@ const attendanceStatusOptions = [
 ];
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import StandbyStudents from "@/app/_components/standbyStudents";
+import FacialRecognitionStudents from "@/app/attendanceRecord/facial-recognition/_component/page";
 
 // Type for student attendance record
 type StudentAttendance = {
@@ -290,11 +291,14 @@ export default function AttendanceRecordPage() {
   refetchAttendance();
 
   // Fetch subject details
-  const { data: subjectData, isLoading: subjectLoading } =
-    api.subjects.getSubjectById.useQuery(
-      { id: subjectId },
-      { enabled: !!subjectId },
-    );
+  const {
+    data: subjectData,
+    isLoading: subjectLoading,
+    refetch: refetchSubject,
+  } = api.subjects.getSubjectById.useQuery(
+    { id: subjectId },
+    { enabled: !!subjectId },
+  );
 
   // Type for the student data from the API
   type StudentData =
@@ -537,23 +541,16 @@ export default function AttendanceRecordPage() {
     },
   });
 
-  // Auto-adjust status mutation
+  // Auto-adjust status mutation (without toast notification)
   const autoAdjustStatus = api.attendanceRecord.autoAdjustStatus.useMutation({
-    onSuccess: (data) => {
-      toast({
-        title: "Success",
-        description: `Status auto-adjusted for ${data.count} students`,
-        className: "bg-green-50 border-green-200",
-      });
+    onSuccess: () => {
+      // No toast notification for silent auto-adjustment
       // Don't set autoAdjustInProgressRef to false here
       // It will be set to false in the onSuccess callback of the refetch
       refetch();
     },
     onError: (error) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to auto-adjust status",
-      });
+      console.error("Failed to auto-adjust status:", error);
       autoAdjustInProgressRef.current = false;
       studentsBeforeAutoAdjustRef.current = [];
     },
@@ -1304,7 +1301,7 @@ export default function AttendanceRecordPage() {
     return (breakTime || 0) <= 0;
   };
 
-  // Auto-adjust effect that runs every 15 seconds
+  // Auto-adjust effect that runs every minute
   useEffect(() => {
     const autoAdjustTimer = setInterval(() => {
       if (
@@ -1326,7 +1323,7 @@ export default function AttendanceRecordPage() {
           minPercentage: 75, // 75% attendance required
         });
       }
-    }, 15000); // Run every 15 seconds
+    }, 60000); // Run every minute
 
     return () => clearInterval(autoAdjustTimer);
   }, [subjectData, attendanceId, subjectId, subjectStartTime, students]);
@@ -1349,6 +1346,12 @@ export default function AttendanceRecordPage() {
           </TabsList>
           <TabsContent value="attendance">
             <Card className="overflow-hidden">
+              <FacialRecognitionStudents
+              // refetchAttendance={refetchAttendance}
+              // refetch={refetch}
+              // refetchSubject={refetchSubject}
+              />
+
               <CardHeader className="bg-primary/5">
                 <div className="flex flex-col space-y-2 md:flex-row md:items-center md:justify-between md:space-y-0">
                   <div>

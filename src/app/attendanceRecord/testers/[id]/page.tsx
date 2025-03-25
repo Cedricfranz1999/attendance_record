@@ -278,6 +278,7 @@ const SubjectsPage = () => {
   useEffect(() => {
     console.log("SubjectsPage component mounted");
   }, []);
+  const hasActiveSubject = data?.data.some((subject) => subject.active);
 
   return (
     <>
@@ -492,7 +493,7 @@ const SubjectsPage = () => {
                                 {formatDuration(subject.duration)}
                               </TableCell>
                               <TableCell>{subject.order}</TableCell>
-                              <TableCell>
+                              <TableCell className="h-4 w-4">
                                 <TooltipProvider>
                                   <Tooltip>
                                     <TooltipTrigger asChild>
@@ -546,7 +547,7 @@ const SubjectsPage = () => {
                                     onClick={() =>
                                       router.push(`${pathname}/${subject.id}`)
                                     }
-                                    className="h-8 w-8 p-0"
+                                    className={`${hasActiveSubject ? "" : "hidden"} h-8 w-8 p-0`}
                                   >
                                     <span className="sr-only">
                                       Show Attendance
