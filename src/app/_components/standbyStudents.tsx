@@ -256,7 +256,7 @@ const StandbyStudents = ({ refetchTrigger }: StandbyStudentsProps) => {
                   <TableCell>
                     <span
                       className={`rounded-full px-2 py-1 text-xs font-medium ${
-                        standby.status === "PRESENT"
+                        standby.status === "PENDING FOR ACTIVE SUBJECT"
                           ? "bg-green-100 text-green-800"
                           : "bg-yellow-100 text-yellow-800"
                       }`}

@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import StandbyStudents from "@/app/_components/standbyStudents";
-const THRESHOLD = 0.4;
+const THRESHOLD = 0.7;
 
 const page = () => {
   const { data, isLoading, refetch } = api.students.getStudents.useQuery({});

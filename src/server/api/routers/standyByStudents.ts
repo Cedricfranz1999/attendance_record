@@ -103,23 +103,27 @@ export const StandbyStudentsRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      // First check if student already exists
       const existingStudent = await ctx.db.standbyStudents.findFirst({
         where: { studentId: input.studentId },
       });
 
+      // If student already exists, return the existing record
       if (existingStudent) {
-        console.log("already");
-      } else {
-        const now = new Date();
-        const philippinesTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-
-        return ctx.db.standbyStudents.create({
-          data: {
-            studentId: input.studentId,
-            startTime: philippinesTime,
-            status: "PRESENT",
-          },
-        });
+        console.log("Student already exists in standby table");
+        return existingStudent;
       }
+
+      // Otherwise create a new record
+      const now = new Date();
+      const philippinesTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+
+      return ctx.db.standbyStudents.create({
+        data: {
+          studentId: input.studentId,
+          startTime: philippinesTime,
+          status: "PRESENT",
+        },
+      });
     }),
 });

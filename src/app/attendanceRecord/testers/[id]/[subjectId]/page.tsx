@@ -57,7 +57,7 @@ const attendanceStatusOptions = [
 ];
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import StandbyStudents from "@/app/_components/standbyStudents";
-import FacialRecognitionStudents from "@/app/attendanceRecord/facial-recognition/_component/page";
+import FacialRecognitionStudents from "@/app/attendanceRecord/facial-recognition/_component/FacialRe";
 
 // Type for student attendance record
 type StudentAttendance = {
@@ -1327,10 +1327,32 @@ export default function AttendanceRecordPage() {
 
     return () => clearInterval(autoAdjustTimer);
   }, [subjectData, attendanceId, subjectId, subjectStartTime, students]);
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      await handleAutoAdjustStatus();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   if (loading || attendanceLoading || subjectLoading || studentsLoading) {
     return <Loader />;
   }
+
+  const handlerefetchAttendance = async () => {
+    console.log("Refetching attendance data");
+    await refetchAttendance();
+  };
+
+  const handlerefetchSubject = async () => {
+    console.log("Refetching subject data");
+    await refetchSubject();
+  };
+
+  const handlerefetch = async () => {
+    console.log("Refetching general data");
+    await refetch();
+  };
 
   return (
     <div className="container mx-auto p-2 md:p-4">
@@ -1346,11 +1368,10 @@ export default function AttendanceRecordPage() {
           </TabsList>
           <TabsContent value="attendance">
             <Card className="overflow-hidden">
-              <FacialRecognitionStudents
-              // refetchAttendance={refetchAttendance}
-              // refetch={refetch}
-              // refetchSubject={refetchSubject}
-              />
+              <div className={`${subjectData?.active ? "" : "hidden"}`}>
+                {" "}
+                <FacialRecognitionStudents />{" "}
+              </div>
 
               <CardHeader className="bg-primary/5">
                 <div className="flex flex-col space-y-2 md:flex-row md:items-center md:justify-between md:space-y-0">

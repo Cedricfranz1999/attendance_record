@@ -10,23 +10,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import StandbyStudents from "@/app/_components/standbyStudents";
 const THRESHOLD = 0.7;
 
-const page = () => {
-  const { data, isLoading, refetch } = api.students.getStudents.useQuery({});
-  const { data: standbyStudentsQuery, refetch: refetchStandby } =
-    api.standbyStudents.getStandbyStudents.useQuery({});
-  console.log("DATA", data, standbyStudentsQuery);
+export const RefetchHolder = () => {
+  return null;
+};
+const FacialRecognitionStudents = () => {
+  const { data, isLoading } = api.students.getStudents.useQuery({});
 
-  const createStandbyStudentMutation =
-    api.standbyStudents.FacialcreateStandbyStudent.useMutation({
-      onSuccess: () => {
-        refetch();
-        refetchStandby();
-      },
-    });
-
+  const [students, setStudents] = useState<any[] | null>(null);
+  const [activeSubject, setActiveSubject] = useState<any | null>(null);
+  const [activeDate, setActiveDate] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const videoHeight = 500;
   const videoWidth = 500;
   const [initializing, setInitializing] = useState(false);
@@ -42,7 +38,6 @@ const page = () => {
   const [detectTimeOut, setDetectTimeOut] = useState<any>(null);
   const [statusTimeIn, setStatusTimeIn] = useState<string>("");
   const [statusTimeOut, setStatusTimeOut] = useState<string>("");
-  const [detectionCount, setDetectionCount] = useState(0);
 
   const [cameraDevices, setCameraDevices] = useState<MediaDeviceInfo[]>([]);
   const [timeInCameraId, setTimeInCameraId] = useState<string>("");
@@ -235,11 +230,32 @@ const page = () => {
                 lastName,
               });
 
-              if (id) {
-                createStandbyStudentMutation.mutate({
-                  studentId: Number(id),
-                });
-                setDetectionCount((prev) => prev + 1);
+              // Record time in
+              if (id && activeSubject && activeDate) {
+                console.log("TIME_IN", id, activeDate, activeSubject);
+                try {
+                  const response = await fetch("/api/liveLogs", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                      attendanceId: activeDate.id,
+                      studentId: Number(id),
+                      subjectId: activeSubject.id,
+                      paused: false,
+                    }),
+                  });
+
+                  if (!response.ok) {
+                    throw new Error("Failed to record time in");
+                  }
+
+                  const data = await response.json();
+                  console.log("Time in recorded successfully:", data);
+                } catch (error) {
+                  console.error("Error recording time in:", error);
+                }
               }
             } else {
               const box = singleResult.detection.box;
@@ -346,11 +362,33 @@ const page = () => {
               });
 
               // Record time out
-              if (id) {
-                createStandbyStudentMutation.mutate({
-                  studentId: Number(id),
-                });
-                setDetectionCount((prev) => prev + 1);
+              if (id && activeSubject && activeDate) {
+                console.log("TIME_OUT");
+                try {
+                  const response = await fetch("/api/liveLogs", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                      attendanceId: Number(activeDate.id),
+                      studentId: Number(id),
+                      subjectId: Number(activeSubject.id),
+                      paused: true,
+                    }),
+                  });
+
+                  if (!response.ok) {
+                    throw new Error("Failed to record time out");
+                  }
+
+                  const data = await response.json();
+                  console.log("Time out recorded successfully:", data);
+
+                  // Call refetchAttendance after successful API call
+                } catch (error) {
+                  console.error("Error recording time out:", error);
+                }
               }
             } else {
               const box = singleResult.detection.box;
@@ -533,6 +571,66 @@ const page = () => {
     }
   }, [faceMatcher, modelsLoaded]);
 
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+
+        // Fetch data from endpoints individually to handle errors separately
+        let activeSubjectData = null;
+        let activeDateData = null;
+
+        try {
+          const activeSubjectRes = await fetch("/api/activeSubject");
+          if (activeSubjectRes.ok) {
+            activeSubjectData = await activeSubjectRes.json();
+            console.log("Active subject data:", activeSubjectData);
+          } else {
+            console.error(
+              "Failed to fetch active subject:",
+              activeSubjectRes.status,
+            );
+            setError(
+              `Failed to fetch active subject data: ${activeSubjectRes.statusText}`,
+            );
+          }
+        } catch (subjectErr) {
+          console.error("Error fetching subject data:", subjectErr);
+          setError("Error connecting to subject API");
+        }
+
+        try {
+          const activeDateRes = await fetch("/api/activeDate");
+          if (activeDateRes.ok) {
+            activeDateData = await activeDateRes.json();
+            console.log("Active date data:", activeDateData);
+          } else {
+            console.error("Failed to fetch active date:", activeDateRes.status);
+            setError(
+              `Failed to fetch active date data: ${activeDateRes.statusText}`,
+            );
+          }
+        } catch (dateErr) {
+          console.error("Error fetching date data:", dateErr);
+          setError("Error connecting to date API");
+        }
+
+        // Update state with whatever data we successfully fetched
+        if (activeSubjectData) setActiveSubject(activeSubjectData);
+        if (activeDateData) setActiveDate(activeDateData);
+      } catch (err) {
+        console.error("Unexpected error in fetchData:", err);
+        setError(
+          err instanceof Error ? err.message : "An unknown error occurred",
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
   return (
     <div className="flex h-full w-full flex-col items-center justify-center bg-white p-4">
       <h1 className="mb-8 text-2xl font-bold">
@@ -547,7 +645,7 @@ const page = () => {
           {/* Camera selector */}
           <div className="mb-4 w-full max-w-xs">
             <Select
-              value={timeInCameraId}
+              value={timeInCameraId || "default-camera-in"}
               onValueChange={handleTimeInCameraChange}
             >
               <SelectTrigger>
@@ -611,7 +709,7 @@ const page = () => {
           {/* Camera selector */}
           <div className="mb-4 w-full max-w-xs">
             <Select
-              value={timeOutCameraId}
+              value={timeOutCameraId || "default-camera-out"}
               onValueChange={handleTimeOutCameraChange}
             >
               <SelectTrigger>
@@ -668,9 +766,8 @@ const page = () => {
           )}
         </div>
       </div>
-      <StandbyStudents refetchTrigger={detectionCount} />
     </div>
   );
 };
 
-export default page;
+export default FacialRecognitionStudents;
