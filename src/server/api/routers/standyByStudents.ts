@@ -30,27 +30,9 @@ export const StandbyStudentsRouter = createTRPCRouter({
       });
 
       const data = await ctx.db.standbyStudents.findMany({
-        where: input.search
-          ? {
-              student: {
-                OR: [
-                  {
-                    firstname: { contains: input.search, mode: "insensitive" },
-                  },
-                  {
-                    middleName: { contains: input.search, mode: "insensitive" },
-                  },
-                  { lastName: { contains: input.search, mode: "insensitive" } },
-                ],
-              },
-            }
-          : undefined,
         include: {
           student: true,
         },
-        skip: input.skip,
-        take: input.take,
-        orderBy: { startTime: "desc" },
       });
 
       return { data, total };
@@ -112,5 +94,36 @@ export const StandbyStudentsRouter = createTRPCRouter({
         where: { id: input.id },
       });
       return { message: "Standby student record deleted successfully" };
+    }),
+
+  FacialcreateStandbyStudent: publicProcedure
+    .input(
+      z.object({
+        studentId: z.number(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      // First check if student already exists
+      const existingStudent = await ctx.db.standbyStudents.findFirst({
+        where: { studentId: input.studentId },
+      });
+
+      // If student already exists, return the existing record
+      if (existingStudent) {
+        console.log("Student already exists in standby table");
+        return existingStudent;
+      }
+
+      // Otherwise create a new record
+      const now = new Date();
+      const philippinesTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+
+      return ctx.db.standbyStudents.create({
+        data: {
+          studentId: input.studentId,
+          startTime: philippinesTime,
+          status: "PRESENT",
+        },
+      });
     }),
 });

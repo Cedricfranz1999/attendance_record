@@ -522,14 +522,6 @@ export default function AttendanceRecordPage() {
 
   // Handle auto-adjust status
   const handleAutoAdjustStatus = () => {
-    if (!subjectStartTime && !subjectData?.startTime) {
-      toast({
-        title: "Error",
-        description: "Subject start time is not available",
-      });
-      return;
-    }
-
     // Get all records that have time tracking data
     const recordsWithTimeData = students
       .filter((student) => student.recordId && student.timeStart)

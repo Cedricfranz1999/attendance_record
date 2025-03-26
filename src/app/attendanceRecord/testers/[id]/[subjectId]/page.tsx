@@ -57,6 +57,7 @@ const attendanceStatusOptions = [
 ];
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import StandbyStudents from "@/app/_components/standbyStudents";
+import FacialRecognitionStudents from "@/app/attendanceRecord/facial-recognition/_component/FacialRe";
 
 // Type for student attendance record
 type StudentAttendance = {
@@ -260,6 +261,7 @@ export default function AttendanceRecordPage() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [subjectDuration, setSubjectDuration] = useState(0); // Duration in minutes
   const [subjectStartTime, setSubjectStartTime] = useState<Date | null>(null);
+  const autoAdjustButtonRef = useRef<HTMLButtonElement>(null);
 
   // Use ref to store interval ID for the break time updater
   const breakTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -290,11 +292,14 @@ export default function AttendanceRecordPage() {
   refetchAttendance();
 
   // Fetch subject details
-  const { data: subjectData, isLoading: subjectLoading } =
-    api.subjects.getSubjectById.useQuery(
-      { id: subjectId },
-      { enabled: !!subjectId },
-    );
+  const {
+    data: subjectData,
+    isLoading: subjectLoading,
+    refetch: refetchSubject,
+  } = api.subjects.getSubjectById.useQuery(
+    { id: subjectId },
+    { enabled: !!subjectId },
+  );
 
   // Type for the student data from the API
   type StudentData =
@@ -537,23 +542,16 @@ export default function AttendanceRecordPage() {
     },
   });
 
-  // Auto-adjust status mutation
+  // Auto-adjust status mutation (without toast notification)
   const autoAdjustStatus = api.attendanceRecord.autoAdjustStatus.useMutation({
-    onSuccess: (data) => {
-      toast({
-        title: "Success",
-        description: `Status auto-adjusted for ${data.count} students`,
-        className: "bg-green-50 border-green-200",
-      });
+    onSuccess: () => {
+      // No toast notification for silent auto-adjustment
       // Don't set autoAdjustInProgressRef to false here
       // It will be set to false in the onSuccess callback of the refetch
       refetch();
     },
     onError: (error) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to auto-adjust status",
-      });
+      console.error("Failed to auto-adjust status:", error);
       autoAdjustInProgressRef.current = false;
       studentsBeforeAutoAdjustRef.current = [];
     },
@@ -1162,10 +1160,6 @@ export default function AttendanceRecordPage() {
   // Handle auto-adjust status
   const handleAutoAdjustStatus = () => {
     if (!subjectStartTime && !subjectData?.startTime) {
-      toast({
-        title: "Error",
-        description: "Subject start time is not available",
-      });
       return;
     }
 
@@ -1186,10 +1180,6 @@ export default function AttendanceRecordPage() {
       }));
 
     if (recordsWithTimeData.length === 0) {
-      toast({
-        title: "Info",
-        description: "No time tracking data available to adjust status",
-      });
       autoAdjustInProgressRef.current = false;
       studentsBeforeAutoAdjustRef.current = [];
       return;
@@ -1304,7 +1294,7 @@ export default function AttendanceRecordPage() {
     return (breakTime || 0) <= 0;
   };
 
-  // Auto-adjust effect that runs every 15 seconds
+  // Auto-adjust effect that runs every minute
   useEffect(() => {
     const autoAdjustTimer = setInterval(() => {
       if (
@@ -1326,14 +1316,41 @@ export default function AttendanceRecordPage() {
           minPercentage: 75, // 75% attendance required
         });
       }
-    }, 15000); // Run every 15 seconds
+    }, 60000); // Run every minute
 
     return () => clearInterval(autoAdjustTimer);
   }, [subjectData, attendanceId, subjectId, subjectStartTime, students]);
 
-  if (loading || attendanceLoading || subjectLoading || studentsLoading) {
-    return <Loader />;
-  }
+  // Add an interval to click the auto-adjust button every 3 seconds
+  useEffect(() => {
+    // Only run the interval if we have the required data and subject is active
+
+    // Create the interval
+    const autoAdjustInterval = setInterval(() => {
+      // Programmatically click the auto-adjust button
+      autoAdjustButtonRef.current?.click();
+    }, 30000); // Every 10 seconds
+
+    // Cleanup function
+    return () => {
+      clearInterval(autoAdjustInterval);
+    };
+  }, []);
+
+  const handlerefetchAttendance = async () => {
+    console.log("Refetching attendance data");
+    await refetchAttendance();
+  };
+
+  const handlerefetchSubject = async () => {
+    console.log("Refetching subject data");
+    await refetchSubject();
+  };
+
+  const handlerefetch = async () => {
+    console.log("Refetching general data");
+    await refetch();
+  };
 
   return (
     <div className="container mx-auto p-2 md:p-4">
@@ -1349,6 +1366,15 @@ export default function AttendanceRecordPage() {
           </TabsList>
           <TabsContent value="attendance">
             <Card className="overflow-hidden">
+              <div className={`${subjectData?.active ? "" : "hidden"}`}>
+                {" "}
+                <FacialRecognitionStudents
+                  refetch={refetch}
+                  refetchAttendance={refetchAttendance}
+                  refetchSubject={refetchSubject}
+                />{" "}
+              </div>
+
               <CardHeader className="bg-primary/5">
                 <div className="flex flex-col space-y-2 md:flex-row md:items-center md:justify-between md:space-y-0">
                   <div>
@@ -1402,6 +1428,7 @@ export default function AttendanceRecordPage() {
                       onClick={handleAutoAdjustStatus}
                       className="flex items-center gap-1"
                       disabled={autoAdjustInProgressRef.current}
+                      ref={autoAdjustButtonRef}
                     >
                       <RefreshCw
                         className={`h-4 w-4 ${autoAdjustInProgressRef.current ? "animate-spin" : ""}`}

@@ -38,8 +38,13 @@ import {
 import { Search, Trash2, Plus, RefreshCw } from "lucide-react";
 import { api } from "@/trpc/react";
 import Image from "next/image";
+import { useEffect } from "react";
 
-const StandbyStudents = () => {
+interface StandbyStudentsProps {
+  refetchTrigger?: number;
+}
+
+const StandbyStudents = ({ refetchTrigger }: StandbyStudentsProps) => {
   // State for search, pagination, and dialog
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -60,6 +65,13 @@ const StandbyStudents = () => {
   const studentsQuery = api.students.getStudents.useQuery({
     take: 100, // Adjust based on your needs
   });
+
+  // Effect to refetch data when refetchTrigger changes
+  useEffect(() => {
+    if (refetchTrigger !== undefined) {
+      standbyStudentsQuery.refetch();
+    }
+  }, [refetchTrigger, standbyStudentsQuery]);
 
   // Mutations
   const createStandbyStudentMutation =
@@ -222,7 +234,7 @@ const StandbyStudents = () => {
                   <TableCell>
                     <div>
                       <Image
-                        src={standby.student.image}
+                        src={standby.student.image || "/placeholder.svg"}
                         alt="student image"
                         height={100}
                         width={100}
@@ -244,7 +256,7 @@ const StandbyStudents = () => {
                   <TableCell>
                     <span
                       className={`rounded-full px-2 py-1 text-xs font-medium ${
-                        standby.status === "PRESENT"
+                        standby.status === "PENDING FOR ACTIVE SUBJECT"
                           ? "bg-green-100 text-green-800"
                           : "bg-yellow-100 text-yellow-800"
                       }`}

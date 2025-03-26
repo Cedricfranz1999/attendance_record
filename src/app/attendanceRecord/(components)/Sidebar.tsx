@@ -56,13 +56,13 @@ const Sidebar = () => {
     },
     {
       href: "/attendanceRecord/testers",
-      label: "Tester",
+      label: "Facial Recognition Attendance",
       icon: <NotebookText className="h-4 w-4" />,
     },
 
     {
-      href: "/attendanceRecord/facial-recognition",
-      label: "Facial Recognition",
+      href: "/attendanceRecord/facial-recognition-standby",
+      label: "Standy Facial Recognition",
       icon: <NotebookText className="h-4 w-4" />,
     },
   ];

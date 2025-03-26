@@ -210,10 +210,9 @@ export const SubjectsRouter = createTRPCRouter({
               );
 
               // Convert string status to enum value
-              let statusValue: AttendanceStatus = AttendanceStatus.PRESENT; // Default
+              let statusValue: AttendanceStatus = AttendanceStatus.ABSENT;
 
               if (standbyStudent.status) {
-                // Check if the string status matches any of the enum values
                 if (
                   Object.values(AttendanceStatus).includes(
                     standbyStudent.status as any,
