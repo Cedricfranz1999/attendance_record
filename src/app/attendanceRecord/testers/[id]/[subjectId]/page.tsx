@@ -1320,6 +1320,13 @@ export default function AttendanceRecordPage() {
 
     return () => clearInterval(autoAdjustTimer);
   }, [subjectData, attendanceId, subjectId, subjectStartTime, students]);
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      await handleAutoAdjustStatus();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Add an interval to click the auto-adjust button every 3 seconds
   useEffect(() => {
